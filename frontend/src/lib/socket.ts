@@ -14,7 +14,8 @@ export async function getSocket(): Promise<Socket> {
     socket.connect();
     return socket;
   }
-  socket = io({
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+  socket = io(backendUrl, {
     path: '/socket.io',
     auth: { token },
     transports: ['websocket', 'polling'],

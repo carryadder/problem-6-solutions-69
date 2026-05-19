@@ -96,15 +96,59 @@ router.post('/', requireAuth, upload.single('image'), async (req, res) => {
   res.status(201).json({ post: decorated });
 });
 
+// Trending tags endpoint
+router.get('/trending-tags', async (req, res) => {
+  const posts = await prisma.post.findMany({
+    take: 100,
+    orderBy: { createdAt: 'desc' },
+    select: { body: true },
+  });
+  const counts = {};
+  for (const p of posts) {
+    const tags = p.body.match(/#[a-zA-Z0-9_]+/g) || [];
+    for (const tag of tags) {
+      counts[tag] = (counts[tag] || 0) + 1;
+    }
+  }
+  const trending = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(x => ({ tag: x[0], count: `${x[1]} posts` }));
+  
+  res.json({ trending });
+});
+
 // Feed: newest first, keyset pagination by createdAt+id.
 router.get('/feed', optionalAuth, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   const cursor = req.query.cursor ? { id: req.query.cursor } : undefined;
+  const type = req.query.type || 'newest';
+
+  let where = {};
+  if (type === 'yours' && req.user) {
+    where = { authorId: req.user.id };
+  }
+
+  // A true 'popular' would require sorting by likeCount, which is complex in prisma without a materialized column.
+  // We'll just fetch more and sort them in JS if popular is requested.
+  if (type === 'popular') {
+    const posts = await prisma.post.findMany({
+      take: limit * 2, // fetch extra to find popular ones
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { author: { select: authorSelect } },
+    });
+    const decorated = await decoratePosts(posts, req.user?.id);
+    decorated.sort((a, b) => (b.likeCount + b.commentCount) - (a.likeCount + a.commentCount));
+    
+    return res.json({ posts: decorated.slice(0, limit), nextCursor: null });
+  }
 
   const posts = await prisma.post.findMany({
     take: limit,
     skip: cursor ? 1 : 0,
     cursor,
+    where,
     orderBy: { createdAt: 'desc' },
     include: { author: { select: authorSelect } },
   });
@@ -130,6 +174,28 @@ router.delete('/:id', requireAuth, async (req, res) => {
   if (post.authorId !== req.user.id) return res.status(403).json({ error: 'forbidden' });
   await prisma.post.delete({ where: { id: post.id } });
   res.json({ ok: true });
+});
+
+const EditPostSchema = z.object({
+  body: z.string().min(1).max(2000),
+});
+
+router.put('/:id', requireAuth, async (req, res) => {
+  const parsed = EditPostSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+  
+  const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: 'not_found' });
+  if (post.authorId !== req.user.id) return res.status(403).json({ error: 'forbidden' });
+  
+  const updated = await prisma.post.update({
+    where: { id: post.id },
+    data: { body: parsed.data.body },
+    include: { author: { select: authorSelect } },
+  });
+  
+  const [decorated] = await decoratePosts([updated], req.user.id);
+  res.json({ post: decorated });
 });
 
 router.post('/:id/share', requireAuth, async (req, res) => {

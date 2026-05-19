@@ -5,7 +5,6 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import jwt from 'jsonwebtoken';
 import { prisma } from './db.js';
 import { redis, subRedis } from './redis.js';
-import { isEmojiOnly } from './util/emoji.js';
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'dev-secret';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
@@ -64,7 +63,6 @@ export function attachChat(httpServer) {
       if (typeof body !== 'string' || body.length > 500) {
         return ack?.({ ok: false, error: 'invalid_body' });
       }
-      if (!isEmojiOnly(body)) return ack?.({ ok: false, error: 'emoji_only' });
 
       const member = await prisma.conversationMember.findUnique({
         where: { conversationId_userId: { conversationId, userId: user.id } },

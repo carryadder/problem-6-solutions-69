@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { api } from '@/lib/api';
 import { avatarFor } from '@/lib/avatar';
+import { MessageCircle, ChevronRight } from 'lucide-react';
+import Loader from '@/components/Loader';
 
 type ConvT = {
   id: string;
@@ -13,6 +15,8 @@ type ConvT = {
   lastMessage: { body: string; createdAt: string } | null;
   lastReadAt: string | null;
 };
+
+import { motion } from 'framer-motion';
 
 export default function ChatListPage() {
   const { status } = useSession();
@@ -26,35 +30,64 @@ export default function ChatListPage() {
     }
   }, [status, router]);
 
-  if (status !== 'authenticated') return <div className="p-6 text-center text-slate-500">Loading…</div>;
+  if (status !== 'authenticated') {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader size="md" className="text-slate-400" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Chats</h1>
-      {convs.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-500 dark:border-slate-700">
-          No conversations yet. Open someone's profile and tap Message.
+    <div className="space-y-6">
+      <motion.div 
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="flex items-center gap-3"
+      >
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+          <MessageCircle className="h-5 w-5" />
         </div>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Chats</h1>
+      </motion.div>
+
+      {convs.length === 0 ? (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 p-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/20"
+        >
+          <MessageCircle className="mb-4 h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h3 className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-100">No conversations</h3>
+          <p className="text-[15px] font-medium text-slate-500">Open someone's profile and tap Message to start chatting.</p>
+        </motion.div>
       ) : (
-        <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-          {convs.map((c) => (
-            <li key={c.id}>
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-soft dark:divide-slate-800/60 dark:border-slate-800/60 dark:bg-slate-900/50">
+          {convs.map((c, i) => (
+            <motion.li 
+              key={c.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+            >
               <Link
                 href={`/chat/${c.id}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
               >
-                <img src={avatarFor(c.other)} alt="" className="h-10 w-10 rounded-full" />
+                <img src={avatarFor(c.other)} alt="" className="h-12 w-12 rounded-full object-cover ring-2 ring-transparent transition-all group-hover:ring-rose-100 dark:group-hover:ring-rose-900/30" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">{c.other.displayName}</div>
-                  <div className="truncate text-xs text-slate-500">
+                  <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
+                  <div className="truncate text-[14px] font-medium text-slate-500">
                     {c.lastMessage?.body || 'No messages yet'}
                   </div>
                 </div>
+                <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400" />
               </Link>
-            </li>
+            </motion.li>
           ))}
         </ul>
       )}
     </div>
   );
 }
+
