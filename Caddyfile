@@ -1,18 +1,19 @@
-# Caddyfile for production deployment with automatic HTTPS via Let's Encrypt
+# Caddyfile for production deployment
 # 
-# Usage:
-#   1. Uncomment the caddy service in docker-compose.prod.yml
-#   2. Replace "example.com" with your actual domain
-#   3. Deploy with: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Configuration:
+#   - Replace "example.com" with your actual domain
+#   - Currently using ports 8080 (HTTP) and 8443 (HTTPS) to avoid port conflicts
+#   - To use standard ports 80/443: update Caddyfile and docker-compose.prod.caddy.yml
 #
-# Caddy automatically:
-#   - Obtains and renews SSL/TLS certificates from Let's Encrypt
-#   - Redirects HTTP to HTTPS
-#   - Proxies requests to the appropriate backend services
-#   - Serves static files from the uploads volume
+# Features:
+#   - Reverse proxy to frontend, backend, and Socket.IO
+#   - Static file serving for uploads
+#   - GZIP compression
+#   - Proper header forwarding for X-Forwarded-Proto, Host, and IP
 
 # Replace example.com with your actual production domain
-example.com {
+# Listening on port 8080 (HTTP)
+example.com:8080 {
     # Encode responses with gzip for faster transfer
     encode gzip
 
@@ -65,7 +66,7 @@ example.com {
         }
     }
 
-    # Enable access logging (optional)
+    # Enable access logging
     log {
         output stdout
         level info
