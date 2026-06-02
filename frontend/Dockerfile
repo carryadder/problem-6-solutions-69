@@ -23,7 +23,11 @@ CMD ["npm", "run", "dev"]
 FROM base AS builder
 ENV NODE_ENV=production
 ARG NEXT_PUBLIC_GTAG_ID
+ARG NEXTAUTH_URL
+ARG FRONTEND_URL
 ENV NEXT_PUBLIC_GTAG_ID=$NEXT_PUBLIC_GTAG_ID
+ENV NEXTAUTH_URL=$NEXTAUTH_URL
+ENV FRONTEND_URL=$FRONTEND_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

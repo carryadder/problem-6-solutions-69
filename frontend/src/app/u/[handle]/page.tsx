@@ -1,103 +1,73 @@
-'use client';
+import { cache } from 'react';
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import ProfilePageClient from './ProfilePageClient';
+import type { ProfileT } from '@/lib/public-page-types';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { api, apiJson } from '@/lib/api';
-import { avatarFor } from '@/lib/avatar';
-import { useSession } from 'next-auth/react';
+const siteUrl = process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || 'http://localhost:3002';
+const backendUrl =
+  process.env.BACKEND_URL ||
+  process.env.PUBLIC_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  'http://localhost:4000';
 
-type ProfileT = {
-  id: string;
-  handle: string;
-  displayName: string;
-  bio: string | null;
-  profilePicture: string | null;
-  createdAt: string;
-  postCount: number;
-};
+function summarize(text: string, max = 160) {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}...`;
+}
 
-export default function ProfilePage() {
-  const params = useParams<{ handle: string }>();
-  const { data: session } = useSession();
-  const router = useRouter();
-  const [user, setUser] = useState<ProfileT | null>(null);
-  const [error, setError] = useState(false);
-  const [shared, setShared] = useState(false);
+const getProfile = cache(async (handle: string): Promise<ProfileT | null> => {
+  const res = await fetch(`${backendUrl}/api/users/${encodeURIComponent(handle)}`, {
+    next: { revalidate: 300 },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch profile ${handle}`);
+  const data = (await res.json()) as { user: ProfileT };
+  return data.user;
+});
 
-  useEffect(() => {
-    api<{ user: ProfileT }>(`/api/users/${params.handle}`)
-      .then((r) => setUser(r.user))
-      .catch(() => setError(true));
-  }, [params.handle]);
+export async function generateMetadata({
+  params,
+}: {
+  params: { handle: string };
+}): Promise<Metadata> {
+  const user = await getProfile(params.handle);
 
-  async function startChat() {
-    if (!user) return;
-    const { conversation } = await apiJson<{ conversation: { id: string } }>(
-      '/api/conversations',
-      { withUserId: user.id },
-    );
-    router.push(`/chat/${conversation.id}`);
+  if (!user) {
+    return {
+      title: 'Profile Not Found',
+      robots: { index: false, follow: false },
+    };
   }
 
-  async function shareProfile() {
-    if (!user) return;
-    try {
-      const { url } = await apiJson<{ url: string }>(`/api/users/${user.handle}/share`, {});
-      const full = `${window.location.origin}${url}`;
-      if (navigator.share) {
-        await navigator.share({ url: full, title: `@${user.handle} on Social` });
-      } else {
-        await navigator.clipboard.writeText(full);
-      }
-      setShared(true);
-      setTimeout(() => setShared(false), 2000);
-    } catch {/* ignore */}
-  }
-
-  if (error) return <div className="p-6 text-center text-slate-500">User not found.</div>;
-  if (!user) return <div className="p-6 text-center text-slate-500">Loading…</div>;
-
-  const isMe = (session as any)?.handle === user.handle;
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          <img src={avatarFor(user)} alt="" className="h-24 w-24 rounded-full" />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-2xl font-bold">{user.displayName}</h1>
-            <div className="text-sm text-slate-500">@{user.handle}</div>
-            {user.bio && <p className="mt-2 whitespace-pre-wrap text-sm">{user.bio}</p>}
-            <div className="mt-2 text-xs text-slate-500">{user.postCount} posts</div>
-          </div>
-          <div className="flex gap-2">
-            {isMe ? (
-              <button
-                type="button"
-                onClick={() => router.push('/settings/profile')}
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
-              >
-                Edit profile
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={startChat}
-                className="rounded-full bg-slate-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-slate-900"
-              >
-                Message
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={shareProfile}
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
-            >
-              {shared ? 'Copied!' : 'Share'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+  const title = `${user.displayName} (@${user.handle})`;
+  const description = summarize(
+    user.bio || `${user.displayName} on Gather. View profile details and ${user.postCount} public posts.`,
   );
+  const url = `${siteUrl}/u/${user.handle}`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      type: 'profile',
+      title,
+      description,
+      url,
+      images: user.profilePicture ? [{ url: user.profilePicture.startsWith('http') ? user.profilePicture : `${siteUrl}${user.profilePicture}` }] : undefined,
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+      images: user.profilePicture ? [user.profilePicture.startsWith('http') ? user.profilePicture : `${siteUrl}${user.profilePicture}`] : undefined,
+    },
+  };
+}
+
+export default async function ProfilePage({ params }: { params: { handle: string } }) {
+  const user = await getProfile(params.handle);
+  if (!user) notFound();
+  return <ProfilePageClient handle={params.handle} initialUser={user} />;
 }

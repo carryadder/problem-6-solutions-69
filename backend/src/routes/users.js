@@ -132,6 +132,19 @@ router.get('/suggested', optionalAuth, async (req, res) => {
   res.json({ users });
 });
 
+router.get('/sitemap', async (_req, res) => {
+  const users = await prisma.user.findMany({
+    orderBy: { updatedAt: 'desc' },
+    take: 5000,
+    select: {
+      handle: true,
+      updatedAt: true,
+    },
+  });
+
+  res.json({ users });
+});
+
 // Public profile by handle. counts: followers & following are reserved for a
 // future phase, for now we return post + share counts.
 router.get('/:handle', optionalAuth, async (req, res) => {

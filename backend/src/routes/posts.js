@@ -158,6 +158,19 @@ router.get('/feed', optionalAuth, async (req, res) => {
   res.json({ posts: decorated, nextCursor });
 });
 
+router.get('/sitemap', async (_req, res) => {
+  const posts = await prisma.post.findMany({
+    orderBy: { updatedAt: 'desc' },
+    take: 5000,
+    select: {
+      id: true,
+      updatedAt: true,
+    },
+  });
+
+  res.json({ posts });
+});
+
 router.get('/:id', optionalAuth, async (req, res) => {
   const post = await prisma.post.findUnique({
     where: { id: req.params.id },

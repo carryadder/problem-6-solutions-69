@@ -57,6 +57,8 @@ services:
       target: prod
       args:
         NEXT_PUBLIC_GTAG_ID: ${NEXT_PUBLIC_GTAG_ID}
+        NEXTAUTH_URL: ${NEXTAUTH_URL}
+        FRONTEND_URL: ${FRONTEND_URL}
     restart: always
     env_file: .env.prod
     environment:

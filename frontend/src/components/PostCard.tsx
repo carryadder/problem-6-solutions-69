@@ -4,24 +4,10 @@ import Link from "next/link";
 import { useState } from "react";
 import { apiJson } from "@/lib/api";
 import { avatarFor } from "@/lib/avatar";
+import type { PostT } from "@/lib/public-page-types";
 import { Heart, MessageCircle, Share, MoreHorizontal } from "lucide-react";
 
-export type PostT = {
-  id: string;
-  body: string;
-  imageUrl: string | null;
-  createdAt: string;
-  author: {
-    id: string;
-    handle: string;
-    displayName: string;
-    profilePicture: string | null;
-  };
-  likeCount: number;
-  commentCount: number;
-  shareCount: number;
-  likedByMe: boolean;
-};
+export type { PostT } from "@/lib/public-page-types";
 
 function timeAgo(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
