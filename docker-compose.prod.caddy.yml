@@ -71,6 +71,8 @@ services:
     build:
       context: ./frontend
       target: prod
+      args:
+        NEXT_PUBLIC_GTAG_ID: ${NEXT_PUBLIC_GTAG_ID}
     restart: always
     env_file: .env.prod
     environment:

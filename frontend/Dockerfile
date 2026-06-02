@@ -22,6 +22,8 @@ CMD ["npm", "run", "dev"]
 # ---------- Production build ----------
 FROM base AS builder
 ENV NODE_ENV=production
+ARG NEXT_PUBLIC_GTAG_ID
+ENV NEXT_PUBLIC_GTAG_ID=$NEXT_PUBLIC_GTAG_ID
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
