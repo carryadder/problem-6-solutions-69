@@ -46,11 +46,12 @@ Then open:
 - Frontend: http://localhost:3002
 - Backend health: http://localhost:4000/api/health
 
-The backend container runs `prisma migrate deploy` on start. The first time
-through there are no migrations yet — generate one with:
+The backend container runs `prisma migrate deploy` on start. The committed
+migrations in `backend/prisma/migrations` are applied automatically, so this
+repo does not need a new `init` migration.
 
 ```bash
-docker compose exec backend npx prisma migrate dev --name init
+docker compose exec backend npx prisma migrate dev --name <change_name>
 ```
 
 After that, schema changes are applied automatically on container start.

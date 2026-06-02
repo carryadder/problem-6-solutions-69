@@ -27,7 +27,7 @@ Edit `.env.prod` and set, at minimum:
 POSTGRES_USER=social
 POSTGRES_PASSWORD=<long random>
 POSTGRES_DB=social
-DATABASE_URL=postgresql://social:<long random>@postgres:5436/social
+DATABASE_URL=postgresql://social:<long random>@postgres:5432/social
 REDIS_URL=redis://redis:6380
 
 FRONTEND_URL=https://YOUR_DOMAIN
@@ -49,7 +49,24 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 The backend container runs `prisma migrate deploy` on start, so the schema is
 applied automatically.
 
-Visit `http://YOUR_DOMAIN/`. You should be redirected to login on first visit.
+If the backend logs show `Error: P3009`, Prisma has recorded a failed
+migration in the target database and will block newer migrations until that
+history entry is resolved.
+
+For this repo's duplicate-init failure, run:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend \
+  npx prisma migrate resolve --rolled-back 20260504081959_init
+
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend \
+  npx prisma migrate deploy
+```
+
+If this is a brand-new disposable environment and you do not need the data,
+`docker compose -f docker-compose.prod.yml down -v` is the simpler reset.
+
+Visit `https://YOUR_DOMAIN/`. You should be redirected to login on first visit.
 
 ## TLS
 
@@ -88,7 +105,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 ## Operational tips
 
-- Logs: `docker compose logs -f backend frontend nginx`
-- Shell into a container: `docker compose exec backend sh`
-- Re-run migrations manually: `docker compose exec backend npx prisma migrate deploy`
-- Wipe and start fresh (DESTRUCTIVE): `docker compose down -v`
+- Logs: `docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f backend frontend`
+- Shell into a container: `docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend sh`
+- Re-run migrations manually: `docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npx prisma migrate deploy`
+- Wipe and start fresh (DESTRUCTIVE): `docker compose -f docker-compose.prod.yml --env-file .env.prod down -v`
