@@ -3,17 +3,25 @@
 import useSWR from 'swr';
 import { useEffect, useState } from 'react';
 
-let cachedToken: string | null = null;
-let tokenPromise: Promise<string | null> | null = null;
+type AuthBootstrap = {
+  token: string | null;
+  backendUrl: string | null;
+};
 
-export async function getToken(): Promise<string | null> {
-  if (cachedToken) return cachedToken;
+let cachedAuthBootstrap: AuthBootstrap | null = null;
+let tokenPromise: Promise<AuthBootstrap> | null = null;
+
+export async function getAuthBootstrap(): Promise<AuthBootstrap> {
+  if (cachedAuthBootstrap) return cachedAuthBootstrap;
   if (tokenPromise) return tokenPromise;
   tokenPromise = fetch('/api/auth/token', { credentials: 'include' })
-    .then((r) => (r.ok ? r.json() : { token: null }))
+    .then((r) => (r.ok ? r.json() : { token: null, backendUrl: null }))
     .then((j) => {
-      cachedToken = j.token || null;
-      return cachedToken;
+      cachedAuthBootstrap = {
+        token: j.token || null,
+        backendUrl: j.backendUrl || null,
+      };
+      return cachedAuthBootstrap;
     })
     .finally(() => {
       tokenPromise = null;
@@ -21,8 +29,12 @@ export async function getToken(): Promise<string | null> {
   return tokenPromise;
 }
 
+export async function getToken(): Promise<string | null> {
+  return (await getAuthBootstrap()).token;
+}
+
 export function clearToken() {
-  cachedToken = null;
+  cachedAuthBootstrap = null;
 }
 
 async function authedFetch(url: string, init: RequestInit = {}) {
@@ -69,7 +81,7 @@ export function useApi<T = any>(url: string | null) {
 
 // useAuthToken — true once we have a usable Bearer token (or null if not signed in).
 export function useAuthToken() {
-  const [token, setToken] = useState<string | null>(cachedToken);
+  const [token, setToken] = useState<string | null>(cachedAuthBootstrap?.token || null);
   useEffect(() => {
     let alive = true;
     getToken().then((t) => alive && setToken(t));
