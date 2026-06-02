@@ -21,6 +21,7 @@ yarn-error.log*
 # Env files (NEVER commit)
 .env
 .env.local
+.env.prod
 .env.development
 .env.test
 .env.production

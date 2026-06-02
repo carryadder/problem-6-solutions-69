@@ -1,0 +1,73 @@
+# Caddyfile for production deployment with automatic HTTPS via Let's Encrypt
+# 
+# Usage:
+#   1. Uncomment the caddy service in docker-compose.prod.yml
+#   2. Replace "example.com" with your actual domain
+#   3. Deploy with: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Caddy automatically:
+#   - Obtains and renews SSL/TLS certificates from Let's Encrypt
+#   - Redirects HTTP to HTTPS
+#   - Proxies requests to the appropriate backend services
+#   - Serves static files from the uploads volume
+
+# Replace example.com with your actual production domain
+example.com {
+    # Encode responses with gzip for faster transfer
+    encode gzip
+
+    # Serve static files from the uploads directory
+    @uploads path /uploads/*
+    handle @uploads {
+        root /var/www
+        file_server
+        # Cache uploads for 7 days
+        header Cache-Control "public, max-age=604800"
+    }
+
+    # Proxy NextAuth routes to the frontend
+    @auth path /api/auth/*
+    handle @auth {
+        reverse_proxy frontend:3002 {
+            header_uri X-Forwarded-Proto https
+            header_uri X-Forwarded-Host {http.request.host}
+            header_uri X-Forwarded-For {http.request.remote.host}
+        }
+    }
+
+    # Proxy REST API routes to the backend
+    handle /api/* {
+        reverse_proxy backend:4000 {
+            header_uri X-Forwarded-Proto https
+            header_uri X-Forwarded-Host {http.request.host}
+            header_uri X-Forwarded-For {http.request.remote.host}
+        }
+    }
+
+    # Proxy Socket.IO connections to the backend
+    handle /socket.io/* {
+        reverse_proxy backend:4000 {
+            header_uri X-Forwarded-Proto https
+            header_uri X-Forwarded-Host {http.request.host}
+            header_uri X-Forwarded-For {http.request.remote.host}
+            # Required for WebSocket support
+            header_up Connection "Upgrade"
+            header_up Upgrade "websocket"
+        }
+    }
+
+    # All other requests go to the frontend (Next.js app)
+    handle {
+        reverse_proxy frontend:3002 {
+            header_uri X-Forwarded-Proto https
+            header_uri X-Forwarded-Host {http.request.host}
+            header_uri X-Forwarded-For {http.request.remote.host}
+        }
+    }
+
+    # Enable access logging (optional)
+    log {
+        output stdout
+        level info
+    }
+}

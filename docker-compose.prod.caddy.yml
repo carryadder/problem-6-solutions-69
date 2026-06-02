@@ -1,0 +1,115 @@
+# ============================================================================
+# PRODUCTION STACK WITH CADDY (OPTIONAL)
+# ============================================================================
+# This is an alternative to docker-compose.prod.yml that includes Caddy
+# for automatic HTTPS/TLS with Let's Encrypt.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.caddy.yml --env-file .env.prod up -d --build
+#
+# Benefits:
+#   - Automatic TLS certificate generation and renewal
+#   - Automatic HTTP → HTTPS redirect
+#   - Built-in compression and caching
+#   - Simpler than nginx + certbot
+#
+# Make sure:
+#   1. Caddyfile exists in the project root and contains your domain
+#   2. DNS is pointing at this server
+#   3. Ports 80 and 443 are open to the internet
+# ============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--port", "6380"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      target: prod
+    restart: always
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      REDIS_URL: redis://redis:6380
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+    restart: always
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+    ports:
+      - "127.0.0.1:3002:3002"
+    depends_on:
+      - backend
+
+  # ========================================================================
+  # CADDY: Reverse proxy with automatic HTTPS via Let's Encrypt
+  # ========================================================================
+  caddy:
+    image: caddy:2.7-alpine
+    restart: always
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - uploads:/var/www/uploads:ro
+    environment:
+      # Agree to Let's Encrypt ACME ToS (required for cert generation)
+      ACME_AGREE: 'true'
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pg_data:
+  redis_data:
+  uploads:
+  caddy_data:
+  caddy_config:

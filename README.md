@@ -4,6 +4,8 @@ Responsive social web app: Google-only login, posts, likes, threaded comments,
 sharing, profiles, and emoji-only real-time chat. Everything runs in Docker.
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
+docker compose -f docker-compose.prod.caddy.yml --env-file .env.prod up -d --build
+
 See [PHASES.md](PHASES.md) for the full 7-phase build plan and
 [DEPLOY.md](DEPLOY.md) for production deployment.
 
