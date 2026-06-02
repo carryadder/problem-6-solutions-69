@@ -81,6 +81,7 @@ REDIS_URL=redis://redis:6380
 FRONTEND_URL=https://example.com
 NEXTAUTH_URL=https://example.com
 BACKEND_URL=http://backend:4000
+PUBLIC_BACKEND_URL=https://api.example.com
 
 # Secrets
 NEXTAUTH_SECRET=<PASTE_YOUR_BASE64_32_HERE>

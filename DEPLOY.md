@@ -32,6 +32,7 @@ REDIS_URL=redis://redis:6380
 
 FRONTEND_URL=https://YOUR_DOMAIN
 BACKEND_URL=http://backend:4000
+PUBLIC_BACKEND_URL=https://api.YOUR_DOMAIN
 NEXTAUTH_URL=https://YOUR_DOMAIN
 
 NEXTAUTH_SECRET=$(openssl rand -base64 32)

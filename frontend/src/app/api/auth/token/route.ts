@@ -7,7 +7,11 @@ import jwt from 'jsonwebtoken';
 
 export const dynamic = 'force-dynamic';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
+const PUBLIC_BACKEND_URL =
+  process.env.PUBLIC_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  process.env.BACKEND_URL ||
+  'http://localhost:4000';
 
 export async function GET(req: Request) {
   const raw = await getToken({
@@ -15,12 +19,12 @@ export async function GET(req: Request) {
     secret: process.env.NEXTAUTH_SECRET,
   });
   if (!raw || !raw.userId) {
-    return NextResponse.json({ error: 'unauthenticated', backendUrl: BACKEND_URL }, { status: 401 });
+    return NextResponse.json({ error: 'unauthenticated', backendUrl: PUBLIC_BACKEND_URL }, { status: 401 });
   }
   const signed = jwt.sign(
     { sub: raw.userId, handle: raw.handle },
     process.env.NEXTAUTH_SECRET || 'dev-secret',
     { expiresIn: '7d' },
   );
-  return NextResponse.json({ token: signed, backendUrl: BACKEND_URL });
+  return NextResponse.json({ token: signed, backendUrl: PUBLIC_BACKEND_URL });
 }
