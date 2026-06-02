@@ -5,14 +5,48 @@ import "./globals.css";
 import Providers from "./providers";
 import AppShell from "@/components/AppShell";
 
+const siteUrl =
+  process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || "http://localhost:3002";
+
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-jakarta",
 });
 
 export const metadata: Metadata = {
-  title: "Social",
-  description: "A small social web app — posts, comments, emoji chat.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "Gather | Private Social Conversations",
+    template: "%s | Gather",
+  },
+  description:
+    "A private social space for meaningful conversations, posts, profiles, and lightweight chat.",
+  applicationName: "Gather",
+  keywords: [
+    "social app",
+    "private social network",
+    "chat app",
+    "social posts",
+    "community platform",
+  ],
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName: "Gather",
+    title: "Gather | Private Social Conversations",
+    description:
+      "A private social space for meaningful conversations, posts, profiles, and lightweight chat.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Gather | Private Social Conversations",
+    description:
+      "A private social space for meaningful conversations, posts, profiles, and lightweight chat.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export const viewport: Viewport = {
