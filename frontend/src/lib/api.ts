@@ -73,6 +73,10 @@ export async function apiUpload<T = any>(url: string, form: FormData): Promise<T
   return api<T>(url, { method: 'POST', body: form });
 }
 
+export function isUnauthorizedError(error: unknown) {
+  return error instanceof Error && error.message.startsWith('401:');
+}
+
 const fetcher = (url: string) => api(url);
 
 export function useApi<T = any>(url: string | null) {

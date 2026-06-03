@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { apiJson } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import { apiJson, isUnauthorizedError } from '@/lib/api';
 import { avatarFor } from '@/lib/avatar';
 import { Heart, Reply } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,12 +30,22 @@ export function CommentRow({
   onChange: (c: CommentT) => void;
   onReply?: (c: CommentT) => void;
 }) {
+  const { status } = useSession();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [showReply, setShowReply] = useState(false);
   const [replyBody, setReplyBody] = useState('');
 
+  function redirectToLogin() {
+    router.push('/login');
+  }
+
   async function toggle() {
     if (busy) return;
+    if (status === 'unauthenticated') {
+      redirectToLogin();
+      return;
+    }
     setBusy(true);
     const next = !c.likedByMe;
     const optim = { ...c, likedByMe: next, likeCount: c.likeCount + (next ? 1 : -1) };
@@ -45,8 +57,9 @@ export function CommentRow({
         next ? 'POST' : 'DELETE',
       );
       onChange({ ...optim, likeCount: res.count });
-    } catch {
+    } catch (error) {
       onChange(c);
+      if (isUnauthorizedError(error)) redirectToLogin();
     } finally {
       setBusy(false);
     }
@@ -54,6 +67,10 @@ export function CommentRow({
 
   async function postReply() {
     if (replyBody.trim().length === 0) return;
+    if (status === 'unauthenticated') {
+      redirectToLogin();
+      return;
+    }
     try {
       const { comment } = await apiJson<{ comment: CommentT }>(`/api/comments/${c.id}/replies`, {
         body: replyBody,
@@ -61,7 +78,9 @@ export function CommentRow({
       onReply?.({ ...comment, likeCount: 0, likedByMe: false });
       setReplyBody('');
       setShowReply(false);
-    } catch {/* ignore */}
+    } catch (error) {
+      if (isUnauthorizedError(error)) redirectToLogin();
+    }
   }
 
   return (

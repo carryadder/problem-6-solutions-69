@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, apiJson } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import { api, apiJson, isUnauthorizedError } from '@/lib/api';
 import PostCard from '@/components/PostCard';
 import { avatarFor } from '@/lib/avatar';
 import { Heart, Reply, MessageSquare } from 'lucide-react';
@@ -12,17 +14,24 @@ function CommentRow({
   c,
   onChange,
   onReply,
+  onRequireAuth,
 }: {
   c: CommentT;
   onChange: (c: CommentT) => void;
   onReply?: (c: CommentT) => void;
+  onRequireAuth: () => void;
 }) {
+  const { status } = useSession();
   const [busy, setBusy] = useState(false);
   const [showReply, setShowReply] = useState(false);
   const [replyBody, setReplyBody] = useState('');
 
   async function toggle() {
     if (busy) return;
+    if (status === 'unauthenticated') {
+      onRequireAuth();
+      return;
+    }
     setBusy(true);
     const next = !c.likedByMe;
     const optim = { ...c, likedByMe: next, likeCount: c.likeCount + (next ? 1 : -1) };
@@ -34,8 +43,9 @@ function CommentRow({
         next ? 'POST' : 'DELETE',
       );
       onChange({ ...optim, likeCount: res.count });
-    } catch {
+    } catch (error) {
       onChange(c);
+      if (isUnauthorizedError(error)) onRequireAuth();
     } finally {
       setBusy(false);
     }
@@ -43,6 +53,10 @@ function CommentRow({
 
   async function postReply() {
     if (replyBody.trim().length === 0) return;
+    if (status === 'unauthenticated') {
+      onRequireAuth();
+      return;
+    }
     try {
       const { comment } = await apiJson<{ comment: CommentT }>(`/api/comments/${c.id}/replies`, {
         body: replyBody,
@@ -50,8 +64,8 @@ function CommentRow({
       onReply?.({ ...comment, likeCount: 0, likedByMe: false });
       setReplyBody('');
       setShowReply(false);
-    } catch {
-      // ignore
+    } catch (error) {
+      if (isUnauthorizedError(error)) onRequireAuth();
     }
   }
 
@@ -116,6 +130,8 @@ export default function PostDetailPageClient({
   initialPost: PostT;
   initialComments: CommentT[];
 }) {
+  const { status } = useSession();
+  const router = useRouter();
   const [post, setPost] = useState<PostT | null>(initialPost);
   const [comments, setComments] = useState<CommentT[]>(initialComments);
   const [body, setBody] = useState('');
@@ -126,14 +142,24 @@ export default function PostDetailPageClient({
     api<{ comments: CommentT[] }>(`/api/posts/${postId}/comments`).then((r) => setComments(r.comments));
   }, [postId]);
 
+  function redirectToLogin() {
+    router.push('/login');
+  }
+
   async function postComment() {
     if (busy || body.trim().length === 0) return;
+    if (status === 'unauthenticated') {
+      redirectToLogin();
+      return;
+    }
     setBusy(true);
     try {
       const { comment } = await apiJson<{ comment: CommentT }>(`/api/posts/${postId}/comments`, { body });
       setComments((prev) => [...prev, { ...comment, likeCount: 0, likedByMe: false, replies: [] }]);
       setBody('');
       setPost((p) => (p ? { ...p, commentCount: p.commentCount + 1 } : p));
+    } catch (error) {
+      if (isUnauthorizedError(error)) redirectToLogin();
     } finally {
       setBusy(false);
     }
@@ -175,6 +201,7 @@ export default function PostDetailPageClient({
             <div key={c.id} className="space-y-4">
               <CommentRow
                 c={c}
+                onRequireAuth={redirectToLogin}
                 onChange={(nc) =>
                   setComments((prev) => prev.map((x) => (x.id === nc.id ? { ...nc, replies: x.replies } : x)))
                 }
@@ -192,6 +219,7 @@ export default function PostDetailPageClient({
                     <CommentRow
                       key={r.id}
                       c={r}
+                      onRequireAuth={redirectToLogin}
                       onChange={(nr) =>
                         setComments((prev) =>
                           prev.map((x) =>

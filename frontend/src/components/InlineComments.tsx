@@ -1,13 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, apiJson } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import { api, apiJson, isUnauthorizedError } from '@/lib/api';
 import { MessageSquare } from 'lucide-react';
 import Loader from './Loader';
 import { motion } from 'framer-motion';
 import { CommentRow, CommentT } from './CommentRow';
 
 export function InlineComments({ postId, onCommentAdded }: { postId: string, onCommentAdded: () => void }) {
+  const { status } = useSession();
+  const router = useRouter();
   const [comments, setComments] = useState<CommentT[]>([]);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
@@ -20,8 +24,16 @@ export function InlineComments({ postId, onCommentAdded }: { postId: string, onC
       .finally(() => setLoading(false));
   }, [postId]);
 
+  function redirectToLogin() {
+    router.push('/login');
+  }
+
   async function postComment() {
     if (busy || body.trim().length === 0) return;
+    if (status === 'unauthenticated') {
+      redirectToLogin();
+      return;
+    }
     setBusy(true);
     try {
       const { comment } = await apiJson<{ comment: CommentT }>(
@@ -31,6 +43,8 @@ export function InlineComments({ postId, onCommentAdded }: { postId: string, onC
       setComments((prev) => [...prev, { ...comment, likeCount: 0, likedByMe: false, replies: [] }]);
       setBody('');
       onCommentAdded();
+    } catch (error) {
+      if (isUnauthorizedError(error)) redirectToLogin();
     } finally {
       setBusy(false);
     }

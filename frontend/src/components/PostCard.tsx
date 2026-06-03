@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { apiJson } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { apiJson, isUnauthorizedError } from "@/lib/api";
 import { avatarFor } from "@/lib/avatar";
 import type { PostT } from "@/lib/public-page-types";
 import { Heart, MessageCircle, Share, MoreHorizontal } from "lucide-react";
@@ -31,7 +32,8 @@ export default function PostCard({
   onChange?: (p: PostT) => void;
   onDelete?: (id: string) => void;
 }) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const isAuthor = (session as any)?.userId === post.author.id;
 
   const [busy, setBusy] = useState(false);
@@ -40,6 +42,10 @@ export default function PostCard({
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editBody, setEditBody] = useState(post.body);
+
+  function redirectToLogin() {
+    router.push('/login');
+  }
 
   async function handleEditSave() {
     if (busy || !editBody.trim()) return;
@@ -74,6 +80,10 @@ export default function PostCard({
 
   async function toggleLike() {
     if (busy) return;
+    if (status === 'unauthenticated') {
+      redirectToLogin();
+      return;
+    }
     setBusy(true);
     const next = !post.likedByMe;
     const optimistic = {
@@ -89,14 +99,19 @@ export default function PostCard({
         next ? "POST" : "DELETE",
       );
       onChange?.({ ...optimistic, likeCount: res.count });
-    } catch {
+    } catch (error) {
       onChange?.(post);
+      if (isUnauthorizedError(error)) redirectToLogin();
     } finally {
       setBusy(false);
     }
   }
 
   async function share() {
+    if (status === 'unauthenticated') {
+      redirectToLogin();
+      return;
+    }
     try {
       const { url } = await apiJson<{ url: string }>(
         `/api/posts/${post.id}/share`,
@@ -111,7 +126,8 @@ export default function PostCard({
       setShared(true);
       setTimeout(() => setShared(false), 2000);
       onChange?.({ ...post, shareCount: post.shareCount + 1 });
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) redirectToLogin();
       /* ignore */
     }
   }
