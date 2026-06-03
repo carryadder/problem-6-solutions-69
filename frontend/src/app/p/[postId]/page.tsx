@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import PostDetailPageClient from './PostDetailPageClient';
 import type { CommentT, PostT } from '@/lib/public-page-types';
 
-const siteUrl = process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || 'http://localhost:3002';
+const siteUrl = process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || 'https://qanda.space';
 const backendUrl =
   process.env.BACKEND_URL ||
   process.env.PUBLIC_BACKEND_URL ||
@@ -49,7 +49,7 @@ export async function generateMetadata({
     };
   }
 
-  const title = `${post.author.displayName} on Gather`;
+  const title = `Q&A Solution by ${post.author.displayName} (@${post.author.handle}) | QandA`;
   const description = summarize(post.body);
   const url = `${siteUrl}/p/${post.id}`;
   const image = post.imageUrl ? (post.imageUrl.startsWith('http') ? post.imageUrl : `${siteUrl}${post.imageUrl}`) : undefined;

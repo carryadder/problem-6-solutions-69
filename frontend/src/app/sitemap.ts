@@ -3,7 +3,7 @@ import type { MetadataRoute } from 'next';
 const siteUrl =
   process.env.NEXTAUTH_URL ||
   process.env.FRONTEND_URL ||
-  'http://localhost:3002';
+  'https://qanda.space';
 const backendUrl =
   process.env.BACKEND_URL ||
   process.env.PUBLIC_BACKEND_URL ||

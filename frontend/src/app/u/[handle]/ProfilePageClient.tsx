@@ -60,8 +60,38 @@ export default function ProfilePageClient({
 
   const isMe = (session as any)?.handle === user.handle;
 
+  const avatarUrl = avatarFor(user);
+  const fullAvatarUrl = avatarUrl
+    ? avatarUrl.startsWith('http')
+      ? avatarUrl
+      : `https://qanda.space${avatarUrl}`
+    : undefined;
+
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    "mainEntity": {
+      "@type": "Person",
+      "name": user.displayName,
+      "additionalName": user.handle,
+      "description": user.bio || undefined,
+      "image": fullAvatarUrl,
+      "interactionStatistic": [
+        {
+          "@type": "InteractionCounter",
+          "interactionType": "https://schema.org/WriteAction",
+          "userInteractionCount": user.postCount
+        }
+      ]
+    }
+  };
+
   return (
     <div className="space-y-4">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           <img src={avatarFor(user)} alt="" className="h-24 w-24 rounded-full" />

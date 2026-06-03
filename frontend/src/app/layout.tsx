@@ -6,7 +6,7 @@ import Providers from "./providers";
 import AppShell from "@/components/AppShell";
 
 const siteUrl =
-  process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || "http://localhost:3002";
+  process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || "https://qanda.space";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -16,32 +16,39 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Gather | Private Social Conversations",
-    template: "%s | Gather",
+    default: "QandA | Q&A Space & Solutions Lookup Chatting Platform",
+    template: "%s | QandA",
   },
   description:
-    "A private social space for meaningful conversations, posts, profiles, and lightweight chat.",
-  applicationName: "Gather",
+    "qanda.space is a private social space and discussion forum to look up solutions to problems, post Q&A, and connect in dedicated chatting rooms.",
+  applicationName: "QandA",
   keywords: [
-    "social app",
-    "private social network",
-    "chat app",
-    "social posts",
-    "community platform",
+    "find solutions to problems",
+    "solution lookup",
+    "q&a space",
+    "question and answer",
+    "chatting space",
+    "private social space",
+    "discussion forum",
+    "community board",
+    "emoji chat",
+    "private conversations",
+    "gather space",
+    "qanda.space"
   ],
   openGraph: {
     type: "website",
     url: siteUrl,
-    siteName: "Gather",
-    title: "Gather | Private Social Conversations",
+    siteName: "QandA",
+    title: "QandA | Q&A Space & Solutions Lookup Chatting Platform",
     description:
-      "A private social space for meaningful conversations, posts, profiles, and lightweight chat.",
+      "qanda.space is a private social space and discussion forum to look up solutions to problems, post Q&A, and connect in dedicated chatting rooms.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Gather | Private Social Conversations",
+    title: "QandA | Q&A Space & Solutions Lookup Chatting Platform",
     description:
-      "A private social space for meaningful conversations, posts, profiles, and lightweight chat.",
+      "qanda.space is a private social space and discussion forum to look up solutions to problems, post Q&A, and connect in dedicated chatting rooms.",
   },
   robots: {
     index: true,

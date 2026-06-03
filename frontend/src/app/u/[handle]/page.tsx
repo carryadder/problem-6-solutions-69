@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import ProfilePageClient from './ProfilePageClient';
 import type { ProfileT } from '@/lib/public-page-types';
 
-const siteUrl = process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || 'http://localhost:3002';
+const siteUrl = process.env.NEXTAUTH_URL || process.env.FRONTEND_URL || 'https://qanda.space';
 const backendUrl =
   process.env.BACKEND_URL ||
   process.env.PUBLIC_BACKEND_URL ||
@@ -42,7 +42,7 @@ export async function generateMetadata({
 
   const title = `${user.displayName} (@${user.handle})`;
   const description = summarize(
-    user.bio || `${user.displayName} on Gather. View profile details and ${user.postCount} public posts.`,
+    user.bio || `${user.displayName} on QandA. View profile details and ${user.postCount} public posts.`,
   );
   const url = `${siteUrl}/u/${user.handle}`;
 

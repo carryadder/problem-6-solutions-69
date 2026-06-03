@@ -15,11 +15,13 @@ function CommentRow({
   onChange,
   onReply,
   onRequireAuth,
+  isReply = false,
 }: {
   c: CommentT;
   onChange: (c: CommentT) => void;
   onReply?: (c: CommentT) => void;
   onRequireAuth: () => void;
+  isReply?: boolean;
 }) {
   const { status } = useSession();
   const [busy, setBusy] = useState(false);
@@ -93,7 +95,19 @@ function CommentRow({
             <span>{c.likeCount > 0 ? c.likeCount : 'Like'}</span>
           </button>
           {onReply && (
-            <button type="button" onClick={() => setShowReply((v) => !v)} className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !showReply;
+                setShowReply(next);
+                if (next && isReply) {
+                  setReplyBody(`@${c.author.handle} `);
+                } else if (!next) {
+                  setReplyBody('');
+                }
+              }}
+              className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300"
+            >
               <Reply className="h-4 w-4" />
               <span>Reply</span>
             </button>
@@ -169,8 +183,48 @@ export default function PostDetailPageClient({
 
   if (!post) return <div className="p-12 text-center text-[15px] font-medium text-slate-500">Loading...</div>;
 
+  const authorAvatarUrl = avatarFor(post.author);
+  const fullAuthorAvatarUrl = authorAvatarUrl
+    ? authorAvatarUrl.startsWith('http')
+      ? authorAvatarUrl
+      : `https://qanda.space${authorAvatarUrl}`
+    : undefined;
+
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "DiscussionForumPosting",
+    "@id": `https://qanda.space/p/${post.id}`,
+    "headline": `Q&A discussion by @${post.author.handle}`,
+    "author": {
+      "@type": "Person",
+      "name": post.author.displayName,
+      "additionalName": post.author.handle,
+      "image": fullAuthorAvatarUrl
+    },
+    "datePublished": post.createdAt,
+    "articleBody": post.body,
+    "image": post.imageUrl ? (post.imageUrl.startsWith('http') ? post.imageUrl : `https://qanda.space${post.imageUrl}`) : undefined,
+    "commentCount": post.commentCount,
+    "interactionStatistic": [
+      {
+        "@type": "InteractionCounter",
+        "interactionType": "https://schema.org/LikeAction",
+        "userInteractionCount": post.likeCount
+      },
+      {
+        "@type": "InteractionCounter",
+        "interactionType": "https://schema.org/CommentAction",
+        "userInteractionCount": post.commentCount
+      }
+    ]
+  };
+
   return (
     <div className="space-y-6">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PostCard
         post={post}
         onChange={setPost}
@@ -232,6 +286,7 @@ export default function PostDetailPageClient({
                     <CommentRow
                       key={r.id}
                       c={r}
+                      isReply={true}
                       onRequireAuth={redirectToLogin}
                       onChange={(nr) =>
                         setComments((prev) =>
@@ -239,6 +294,13 @@ export default function PostDetailPageClient({
                             x.id === c.id
                               ? { ...x, replies: x.replies!.map((y) => (y.id === nr.id ? nr : y)) }
                               : x,
+                          ),
+                        )
+                      }
+                      onReply={(reply) =>
+                        setComments((prev) =>
+                          prev.map((x) =>
+                            x.id === c.id ? { ...x, replies: [...(x.replies || []), reply] } : x,
                           ),
                         )
                       }
