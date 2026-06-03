@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -137,6 +137,8 @@ export default function PostDetailPageClient({
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const commentInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     api<{ post: PostT }>(`/api/posts/${postId}`).then((r) => setPost(r.post)).catch(() => setPost(null));
     api<{ comments: CommentT[] }>(`/api/posts/${postId}/comments`).then((r) => setComments(r.comments));
@@ -169,11 +171,22 @@ export default function PostDetailPageClient({
 
   return (
     <div className="space-y-6">
-      <PostCard post={post} onChange={setPost} onDelete={() => { window.location.href = '/feed'; }} />
+      <PostCard
+        post={post}
+        onChange={setPost}
+        onDelete={() => { window.location.href = '/feed'; }}
+        onCommentClick={() => {
+          if (commentInputRef.current) {
+            commentInputRef.current.focus();
+            commentInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }}
+      />
 
       <div className="space-y-6 rounded-3xl border border-slate-200/60 bg-white p-6 shadow-soft dark:border-slate-800/60 dark:bg-slate-900/50">
         <div className="flex gap-3">
           <input
+            ref={commentInputRef}
             value={body}
             onChange={(e) => setBody(e.target.value.slice(0, 500))}
             placeholder="Add a comment..."

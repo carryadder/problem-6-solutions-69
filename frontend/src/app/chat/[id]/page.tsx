@@ -118,7 +118,7 @@ export default function ChatThreadPage() {
   const other = messages.find((m) => m.senderId !== meId)?.sender;
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-3">
+    <div className="absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 flex flex-col gap-2.5 bg-[#fbfbfa] p-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] dark:bg-[#0A0A0A] md:static md:h-[calc(100vh-8rem)] md:p-0 md:bg-transparent md:dark:bg-transparent md:z-auto">
       <header className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-black/40">
         <Link href="/chat" className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
           <ArrowLeft className="h-4 w-4" />
@@ -233,7 +233,7 @@ export default function ChatThreadPage() {
           type="button"
           onClick={send}
           disabled={!draft.trim() || sending}
-          className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"
+          className="rounded-full bg-slate-900 px-4 sm:px-6 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:scale-105 disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"
         >
           {sending ? 'Sending...' : 'Send'}
         </button>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, apiJson } from '@/lib/api';
 import { avatarFor } from '@/lib/avatar';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import type { ProfileT } from '@/lib/public-page-types';
 
 export default function ProfilePageClient({
@@ -71,7 +71,7 @@ export default function ProfilePageClient({
             {user.bio && <p className="mt-2 whitespace-pre-wrap text-sm">{user.bio}</p>}
             <div className="mt-2 text-xs text-slate-500">{user.postCount} posts</div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {isMe ? (
               <button
                 type="button"
@@ -96,6 +96,15 @@ export default function ProfilePageClient({
             >
               {shared ? 'Copied!' : 'Share'}
             </button>
+            {isMe && (
+              <button
+                type="button"
+                onClick={() => signOut({ callbackUrl: '/' })}
+                className="rounded-full border border-rose-200 bg-rose-50/50 text-rose-600 px-4 py-2 text-sm dark:border-rose-900/30 dark:bg-rose-950/20 dark:text-rose-400 hover:bg-rose-100/50 dark:hover:bg-rose-950/40 transition-colors"
+              >
+                Log out
+              </button>
+            )}
           </div>
         </div>
       </div>

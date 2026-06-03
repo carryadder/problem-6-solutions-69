@@ -27,10 +27,12 @@ export default function PostCard({
   post,
   onChange,
   onDelete,
+  onCommentClick,
 }: {
   post: PostT;
   onChange?: (p: PostT) => void;
   onDelete?: (id: string) => void;
+  onCommentClick?: () => void;
 }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -280,9 +282,15 @@ export default function PostCard({
         <motion.button
           whileTap={{ scale: 0.9 }}
           type="button"
-          onClick={() => setShowComments(!showComments)}
+          onClick={() => {
+            if (onCommentClick) {
+              onCommentClick();
+            } else {
+              setShowComments(!showComments);
+            }
+          }}
           className={`flex items-center gap-2 rounded-full px-3 py-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${
-            showComments
+            showComments && !onCommentClick
               ? "text-slate-900 bg-slate-100 dark:bg-slate-800 dark:text-slate-100"
               : "hover:text-slate-700 dark:hover:text-slate-300"
           }`}
@@ -307,7 +315,7 @@ export default function PostCard({
         </motion.button>
       </footer>
       <AnimatePresence>
-        {showComments && (
+        {showComments && !onCommentClick && (
           <InlineComments
             postId={post.id}
             onCommentAdded={() =>
