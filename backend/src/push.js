@@ -65,6 +65,35 @@ function pushPreferenceEnabled(user, type) {
   }
 }
 
+function minutesInTimeZone(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const hour = parseInt(parts.find((part) => part.type === 'hour')?.value || '0', 10);
+  const minute = parseInt(parts.find((part) => part.type === 'minute')?.value || '0', 10);
+  return hour * 60 + minute;
+}
+
+function isWithinQuietHours(user, now = new Date()) {
+  if (!user.quietHoursEnabled) return false;
+
+  try {
+    const currentMinutes = minutesInTimeZone(now, user.quietHoursTimeZone || 'UTC');
+    const start = user.quietHoursStartMinutes;
+    const end = user.quietHoursEndMinutes;
+
+    if (start === end) return true;
+    if (start < end) return currentMinutes >= start && currentMinutes < end;
+    return currentMinutes >= start || currentMinutes < end;
+  } catch {
+    return false;
+  }
+}
+
 function throttleWindowSeconds(type) {
   switch (type) {
     case 'LIKE':
@@ -110,10 +139,30 @@ export async function sendPushNotification(userId, notification) {
       pushReplyEnabled: true,
       pushMentionEnabled: true,
       pushMessageEnabled: true,
+      quietHoursEnabled: true,
+      quietHoursStartMinutes: true,
+      quietHoursEndMinutes: true,
+      quietHoursTimeZone: true,
     },
   });
 
   if (!user || !pushPreferenceEnabled(user, notification.type)) return;
+  if (isWithinQuietHours(user)) return;
+
+  if (notification.type === 'MESSAGE' && notification.targetType === 'CONVERSATION' && notification.targetId) {
+    const membership = await prisma.conversationMember.findUnique({
+      where: {
+        conversationId_userId: {
+          conversationId: notification.targetId,
+          userId,
+        },
+      },
+      select: { pushMuted: true },
+    });
+
+    if (membership?.pushMuted) return;
+  }
+
   if (!(await shouldSendPushNotification(userId, notification))) return;
 
   const subscriptions = await prisma.pushSubscription.findMany({

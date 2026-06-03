@@ -5,14 +5,20 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Socket } from 'socket.io-client';
 import { useSession } from 'next-auth/react';
-import { api } from '@/lib/api';
+import { api, apiJson } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { avatarFor } from '@/lib/avatar';
 import EmojiPicker from '@/components/EmojiPicker';
-import { ArrowLeft, MessageCircle, MessageSquare, Smile } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, MessageSquare, Smile } from 'lucide-react';
 
 type Sender = { id: string; handle: string; displayName: string; profilePicture: string | null };
 type MessageT = { id: string; conversationId: string; senderId: string; body: string; createdAt: string; sender: Sender };
+type ConversationT = {
+  id: string;
+  other: Sender | null;
+  lastReadAt: string | null;
+  pushMuted: boolean;
+};
 
 export default function ChatThreadPage() {
   const params = useParams<{ id: string }>();
@@ -25,6 +31,8 @@ export default function ChatThreadPage() {
   const [error, setError] = useState<string | null>(null);
   const [typing, setTyping] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [conversation, setConversation] = useState<ConversationT | null>(null);
+  const [muteBusy, setMuteBusy] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const meId = (session as any)?.userId;
@@ -39,9 +47,13 @@ export default function ChatThreadPage() {
     let activeSocket: Socket | null = null;
 
     setLoading(true);
-    api<{ messages: MessageT[] }>(`/api/conversations/${params.id}/messages`).then((r) => {
+    Promise.all([
+      api<{ messages: MessageT[] }>(`/api/conversations/${params.id}/messages`),
+      api<{ conversation: ConversationT }>(`/api/conversations/${params.id}`),
+    ]).then(([messagesRes, conversationRes]) => {
       if (!cancelled) {
-        setMessages(r.messages);
+        setMessages(messagesRes.messages);
+        setConversation(conversationRes.conversation);
         setLoading(false);
       }
     }).catch(() => {
@@ -115,7 +127,27 @@ export default function ChatThreadPage() {
     );
   }
 
-  const other = messages.find((m) => m.senderId !== meId)?.sender;
+  async function toggleMute() {
+    if (!conversation || muteBusy) return;
+    setMuteBusy(true);
+    const nextMuted = !conversation.pushMuted;
+    setConversation({ ...conversation, pushMuted: nextMuted });
+
+    try {
+      const res = await apiJson<{ preferences: { pushMuted: boolean } }>(
+        `/api/conversations/${params.id}/preferences`,
+        { pushMuted: nextMuted },
+        'PATCH',
+      );
+      setConversation((prev) => (prev ? { ...prev, pushMuted: res.preferences.pushMuted } : prev));
+    } catch {
+      setConversation(conversation);
+    } finally {
+      setMuteBusy(false);
+    }
+  }
+
+  const other = conversation?.other || messages.find((m) => m.senderId !== meId)?.sender;
 
   return (
     <div className="absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 flex flex-col gap-2.5 bg-[#fbfbfa] p-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] dark:bg-[#0A0A0A] md:static md:h-[calc(100vh-8rem)] md:p-0 md:bg-transparent md:dark:bg-transparent md:z-auto">
@@ -129,6 +161,17 @@ export default function ChatThreadPage() {
             <img src={avatarFor(other)} alt="" className="h-8 w-8 rounded-full object-cover" />
             <span className="text-sm font-semibold">{other.displayName}</span>
           </Link>
+        )}
+        {conversation && (
+          <button
+            type="button"
+            onClick={toggleMute}
+            disabled={muteBusy}
+            className="ml-auto inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:text-slate-300"
+          >
+            {conversation.pushMuted ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+            <span>{conversation.pushMuted ? 'Unmute push' : 'Mute push'}</span>
+          </button>
         )}
       </header>
 

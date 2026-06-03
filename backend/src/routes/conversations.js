@@ -34,6 +34,7 @@ router.get('/', requireAuth, async (req, res) => {
       other,
       lastMessage: last,
       lastReadAt: m.lastReadAt,
+      pushMuted: m.pushMuted,
     };
   });
 
@@ -76,6 +77,50 @@ router.post('/', requireAuth, async (req, res) => {
     },
   });
   res.status(201).json({ conversation: conv });
+});
+
+router.get('/:id', requireAuth, async (req, res) => {
+  const member = await prisma.conversationMember.findUnique({
+    where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
+    include: {
+      conversation: {
+        include: {
+          members: { include: { user: { select: authorSelect } } },
+        },
+      },
+    },
+  });
+  if (!member) return res.status(403).json({ error: 'forbidden' });
+
+  const other = member.conversation.members.find((x) => x.userId !== req.user.id)?.user || null;
+
+  res.json({
+    conversation: {
+      id: member.conversationId,
+      other,
+      lastReadAt: member.lastReadAt,
+      pushMuted: member.pushMuted,
+    },
+  });
+});
+
+const PreferencesSchema = z.object({
+  pushMuted: z.boolean(),
+});
+
+router.patch('/:id/preferences', requireAuth, async (req, res) => {
+  const parsed = PreferencesSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const member = await prisma.conversationMember.update({
+    where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
+    data: { pushMuted: parsed.data.pushMuted },
+    select: { pushMuted: true },
+  }).catch(() => null);
+
+  if (!member) return res.status(403).json({ error: 'forbidden' });
+
+  res.json({ preferences: member });
 });
 
 router.get('/:id/messages', requireAuth, async (req, res) => {

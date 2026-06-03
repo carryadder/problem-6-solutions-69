@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { api } from '@/lib/api';
 import { avatarFor } from '@/lib/avatar';
-import { MessageCircle, ChevronRight } from 'lucide-react';
+import { MessageCircle, ChevronRight, BellOff } from 'lucide-react';
 import Loader from '@/components/Loader';
 
 type ConvT = {
@@ -14,6 +14,7 @@ type ConvT = {
   other: { id: string; handle: string; displayName: string; profilePicture: string | null };
   lastMessage: { body: string; createdAt: string } | null;
   lastReadAt: string | null;
+  pushMuted: boolean;
 };
 
 import { motion } from 'framer-motion';
@@ -76,7 +77,10 @@ export default function ChatListPage() {
               >
                 <img src={avatarFor(c.other)} alt="" className="h-12 w-12 rounded-full object-cover ring-2 ring-transparent transition-all group-hover:ring-rose-100 dark:group-hover:ring-rose-900/30" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
+                    {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
+                  </div>
                   <div className="truncate text-[14px] font-medium text-slate-500">
                     {c.lastMessage?.body || 'No messages yet'}
                   </div>
