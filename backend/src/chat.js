@@ -5,9 +5,16 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import jwt from 'jsonwebtoken';
 import { prisma } from './db.js';
 import { redis, subRedis } from './redis.js';
+import { sendPushNotification } from './push.js';
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'dev-secret';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
+let ioInstance = null;
+
+export function emitUserNotification(userId, payload) {
+  ioInstance?.to(`user:${userId}`).emit('notification:new', payload);
+  void sendPushNotification(userId, payload);
+}
 
 // Token-bucket rate limit: 30 messages / 10 seconds per user per conversation.
 async function rateLimitOk(userId, conversationId) {
@@ -22,6 +29,7 @@ export function attachChat(httpServer) {
     cors: { origin: FRONTEND_URL, credentials: true },
     path: '/socket.io',
   });
+  ioInstance = io;
 
   io.adapter(createAdapter(redis, subRedis));
 
@@ -88,11 +96,25 @@ export function attachChat(httpServer) {
         select: { userId: true },
       });
       for (const o of others) {
-        io.to(`user:${o.userId}`).emit('notification:new', {
-          type: 'MESSAGE',
-          conversationId,
-          from: message.sender,
-          preview: body.slice(0, 32),
+        const notification = await prisma.notification.create({
+          data: {
+            userId: o.userId,
+            actorId: user.id,
+            type: 'MESSAGE',
+            targetType: 'CONVERSATION',
+            targetId: conversationId,
+          },
+        });
+
+        emitUserNotification(o.userId, {
+          id: notification.id,
+          type: notification.type,
+          targetType: notification.targetType,
+          targetId: notification.targetId,
+          createdAt: notification.createdAt,
+          actor: message.sender,
+          preview: body.slice(0, 120),
+          href: `/chat/${conversationId}`,
         });
       }
       ack?.({ ok: true, message });

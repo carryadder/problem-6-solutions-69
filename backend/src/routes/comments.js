@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth.js';
+import { emitUserNotification } from '../chat.js';
 
 const router = Router();
 
@@ -28,14 +29,29 @@ router.post('/:id/replies', requireAuth, async (req, res) => {
   });
 
   if (parent.authorId !== req.user.id) {
-    await prisma.notification.create({
+    const notification = await prisma.notification.create({
       data: {
         userId: parent.authorId,
         actorId: req.user.id,
         type: 'REPLY',
-        targetType: 'COMMENT',
-        targetId: parent.id,
+        targetType: 'POST',
+        targetId: parent.postId,
       },
+    });
+    emitUserNotification(parent.authorId, {
+      id: notification.id,
+      type: notification.type,
+      targetType: notification.targetType,
+      targetId: notification.targetId,
+      createdAt: notification.createdAt,
+      href: `/p/${parent.postId}`,
+      actor: {
+        id: req.user.id,
+        handle: req.user.handle,
+        displayName: req.user.displayName,
+        profilePicture: req.user.profilePicture,
+      },
+      preview: reply.body.slice(0, 120),
     });
   }
   res.status(201).json({ comment: reply });

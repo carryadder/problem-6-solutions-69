@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth.js';
+import { emitUserNotification } from '../chat.js';
 
 const router = Router();
 
@@ -10,18 +11,35 @@ const LikeSchema = z.object({
   targetId: z.string().min(1),
 });
 
-async function notifyLike(actorId, targetType, targetId) {
+async function notifyLike(actor, targetType, targetId) {
   let recipientId = null;
+  let href = null;
   if (targetType === 'POST') {
     const p = await prisma.post.findUnique({ where: { id: targetId }, select: { authorId: true } });
     recipientId = p?.authorId;
+    href = p ? `/p/${targetId}` : null;
   } else {
-    const c = await prisma.comment.findUnique({ where: { id: targetId }, select: { authorId: true } });
+    const c = await prisma.comment.findUnique({ where: { id: targetId }, select: { authorId: true, postId: true } });
     recipientId = c?.authorId;
+    href = c ? `/p/${c.postId}` : null;
   }
-  if (!recipientId || recipientId === actorId) return;
-  await prisma.notification.create({
-    data: { userId: recipientId, actorId, type: 'LIKE', targetType, targetId },
+  if (!recipientId || recipientId === actor.id) return;
+  const notification = await prisma.notification.create({
+    data: { userId: recipientId, actorId: actor.id, type: 'LIKE', targetType, targetId },
+  });
+  emitUserNotification(recipientId, {
+    id: notification.id,
+    type: notification.type,
+    targetType: notification.targetType,
+    targetId: notification.targetId,
+    createdAt: notification.createdAt,
+    href,
+    actor: {
+      id: actor.id,
+      handle: actor.handle,
+      displayName: actor.displayName,
+      profilePicture: actor.profilePicture,
+    },
   });
 }
 
@@ -34,7 +52,7 @@ router.post('/', requireAuth, async (req, res) => {
     await prisma.like.create({
       data: { userId: req.user.id, targetType, targetId },
     });
-    await notifyLike(req.user.id, targetType, targetId);
+    await notifyLike(req.user, targetType, targetId);
   } catch {
     // unique violation = already liked, treat as idempotent
   }

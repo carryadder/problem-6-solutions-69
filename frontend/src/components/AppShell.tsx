@@ -6,6 +6,8 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useApi, apiJson } from "@/lib/api";
 import { avatarFor } from "@/lib/avatar";
+import { getSocket, disconnectSocket } from "@/lib/socket";
+import { useSWRConfig } from "swr";
 import {
   Home,
   Search,
@@ -25,6 +27,22 @@ const NAV = [
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/notifications", label: "Alerts", icon: Bell },
 ];
+
+type RealtimeNotification = {
+  id: string;
+  type: "LIKE" | "COMMENT" | "REPLY" | "MENTION" | "MESSAGE";
+  targetType: string | null;
+  targetId: string | null;
+  createdAt: string;
+  href?: string;
+  actor: {
+    id: string;
+    handle: string;
+    displayName: string;
+    profilePicture: string | null;
+  };
+  preview?: string;
+};
 
 function ThemeToggle({ isBottomNav }: { isBottomNav?: boolean }) {
   const [dark, setDark] = useState(false);
@@ -79,6 +97,7 @@ function ThemeToggle({ isBottomNav }: { isBottomNav?: boolean }) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
+  const { mutate } = useSWRConfig();
   const pathname = usePathname() || "/";
   const isAuthPage = pathname === "/login" || pathname === "/";
   const [authPending, setAuthPending] = useState(false);
@@ -103,6 +122,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   );
   const unread = notifData?.unread || 0;
 
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    if (!("setAppBadge" in navigator) || !("clearAppBadge" in navigator)) return;
+
+    if (unread > 0) {
+      void (navigator as Navigator & { setAppBadge: (count?: number) => Promise<void> }).setAppBadge(unread).catch(() => {});
+      return;
+    }
+
+    void (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge().catch(() => {});
+  }, [unread]);
+
   const { data: trendingData } = useApi<{
     trending: { tag: string; count: string }[];
   }>("/api/posts/trending-tags");
@@ -126,6 +157,38 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       setSetupHandle(me.handle);
     }
   }, [me]);
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      disconnectSocket();
+      return;
+    }
+
+    let active = true;
+    let cleanup: (() => void) | undefined;
+
+    getSocket()
+      .then((socket) => {
+        if (!active) return;
+
+        const onNotification = (notification: RealtimeNotification) => {
+          mutate("/api/notifications");
+        };
+
+        socket.on("notification:new", onNotification);
+        cleanup = () => {
+          socket.off("notification:new", onNotification);
+        };
+      })
+      .catch(() => {
+        // Keep the app usable even if realtime notifications fail.
+      });
+
+    return () => {
+      active = false;
+      cleanup?.();
+    };
+  }, [mutate, status]);
 
   async function completeSetup() {
     if (setupBusy) return;

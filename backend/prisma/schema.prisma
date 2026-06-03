@@ -20,6 +20,11 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   setupComplete  Boolean  @default(false)
+  pushLikeEnabled    Boolean @default(true)
+  pushCommentEnabled Boolean @default(true)
+  pushReplyEnabled   Boolean @default(true)
+  pushMentionEnabled Boolean @default(true)
+  pushMessageEnabled Boolean @default(true)
 
   posts                Post[]
   comments             Comment[]
@@ -29,6 +34,7 @@ model User {
   notificationsCreated Notification[]      @relation("NotificationActor")
   conversationMembers  ConversationMember[]
   messages             Message[]
+  pushSubscriptions    PushSubscription[]
 
   @@index([handle])
   @@index([email])
@@ -151,4 +157,17 @@ model Notification {
 
   @@index([userId, createdAt])
   @@index([userId, readAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
 }

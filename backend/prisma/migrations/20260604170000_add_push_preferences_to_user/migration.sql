@@ -1,0 +1,6 @@
+ALTER TABLE "User"
+ADD COLUMN "pushLikeEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "pushCommentEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "pushReplyEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "pushMentionEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "pushMessageEnabled" BOOLEAN NOT NULL DEFAULT true;
