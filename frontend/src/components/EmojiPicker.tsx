@@ -14,7 +14,7 @@ const EMOJI: Record<string, string[]> = {
 
 export default function EmojiPicker({ onPick }: { onPick: (e: string) => void }) {
   return (
-    <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
+    <div className="w-[280px] sm:w-[320px] max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900 shadow-xl">
       {Object.entries(EMOJI).map(([cat, list]) => (
         <div key={cat} className="mb-2">
           <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
