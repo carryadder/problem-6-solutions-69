@@ -24,6 +24,10 @@ const PushPreferencesSchema = z.object({
   pushReplyEnabled: z.boolean().optional(),
   pushMentionEnabled: z.boolean().optional(),
   pushMessageEnabled: z.boolean().optional(),
+  quietHoursEnabled: z.boolean().optional(),
+  quietHoursStartMinutes: z.number().int().min(0).max(1439).optional(),
+  quietHoursEndMinutes: z.number().int().min(0).max(1439).optional(),
+  quietHoursTimeZone: z.string().min(1).max(80).optional(),
 });
 
 router.get('/preferences', requireAuth, (req, res) => {
@@ -34,6 +38,10 @@ router.get('/preferences', requireAuth, (req, res) => {
       pushReplyEnabled: req.user.pushReplyEnabled,
       pushMentionEnabled: req.user.pushMentionEnabled,
       pushMessageEnabled: req.user.pushMessageEnabled,
+      quietHoursEnabled: req.user.quietHoursEnabled,
+      quietHoursStartMinutes: req.user.quietHoursStartMinutes,
+      quietHoursEndMinutes: req.user.quietHoursEndMinutes,
+      quietHoursTimeZone: req.user.quietHoursTimeZone,
     },
   });
 });
@@ -51,6 +59,10 @@ router.patch('/preferences', requireAuth, async (req, res) => {
       pushReplyEnabled: true,
       pushMentionEnabled: true,
       pushMessageEnabled: true,
+      quietHoursEnabled: true,
+      quietHoursStartMinutes: true,
+      quietHoursEndMinutes: true,
+      quietHoursTimeZone: true,
     },
   });
 

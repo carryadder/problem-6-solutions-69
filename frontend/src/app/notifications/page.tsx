@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -25,20 +25,31 @@ type PushConfig = {
   publicKey: string | null;
 };
 
-type PushPreferences = {
+type NotificationPreferences = {
   pushLikeEnabled: boolean;
   pushCommentEnabled: boolean;
   pushReplyEnabled: boolean;
   pushMentionEnabled: boolean;
   pushMessageEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStartMinutes: number;
+  quietHoursEndMinutes: number;
+  quietHoursTimeZone: string;
 };
 
 type PushSubscriptionJSON = {
   endpoint: string;
-  keys?: {
-    p256dh?: string;
-    auth?: string;
-  };
+};
+
+type NotificationGroup = {
+  key: string;
+  href: string;
+  type: NotifT['type'];
+  targetType: string | null;
+  createdAt: string;
+  unread: boolean;
+  items: NotifT[];
+  actors: NotifT['actor'][];
 };
 
 const VERB: Record<NotifT['type'], string> = {
@@ -49,12 +60,70 @@ const VERB: Record<NotifT['type'], string> = {
   MESSAGE: 'messaged you',
 };
 
-function linkFor(n: NotifT): string {
-  if (n.href) return n.href;
-  if (n.targetType === 'POST' && n.targetId) return `/p/${n.targetId}`;
-  if (n.type === 'MESSAGE' && n.targetId) return `/chat/${n.targetId}`;
-  if (n.type === 'MESSAGE') return '/chat';
-  return `/u/${n.actor.handle}`;
+function toTimeInputValue(minutes: number) {
+  const hour = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const minute = String(minutes % 60).padStart(2, '0');
+  return `${hour}:${minute}`;
+}
+
+function fromTimeInputValue(value: string) {
+  const [hour, minute] = value.split(':').map((part) => parseInt(part, 10));
+  return hour * 60 + minute;
+}
+
+function actorLabel(actors: NotifT['actor'][]) {
+  if (actors.length === 0) return 'Someone';
+  if (actors.length === 1) return actors[0].displayName;
+  return `${actors[0].displayName} and ${actors.length - 1} others`;
+}
+
+function summaryForGroup(group: NotificationGroup) {
+  const noun =
+    group.type === 'LIKE' && group.targetType === 'POST'
+      ? ' post'
+      : group.type === 'LIKE' && group.targetType === 'COMMENT'
+        ? ' comment'
+        : '';
+
+  return `${actorLabel(group.actors)} ${VERB[group.type]}${noun}`;
+}
+
+function groupNotifications(items: NotifT[]): NotificationGroup[] {
+  const groups: NotificationGroup[] = [];
+
+  for (const item of items) {
+    const previous = groups[groups.length - 1];
+    const withinWindow =
+      previous &&
+      new Date(previous.createdAt).getTime() - new Date(item.createdAt).getTime() <= 6 * 60 * 60 * 1000;
+    const sameBucket =
+      previous &&
+      previous.type === item.type &&
+      previous.href === item.href &&
+      previous.targetType === item.targetType &&
+      withinWindow;
+
+    if (!sameBucket) {
+      groups.push({
+        key: item.id,
+        href: item.href,
+        type: item.type,
+        targetType: item.targetType,
+        createdAt: item.createdAt,
+        unread: !item.readAt,
+        items: [item],
+        actors: [item.actor],
+      });
+      continue;
+    }
+
+    previous.items.push(item);
+    previous.unread = previous.unread || !item.readAt;
+    const hasActor = previous.actors.some((actor) => actor.id === item.actor.id);
+    if (!hasActor) previous.actors.push(item.actor);
+  }
+
+  return groups;
 }
 
 export default function NotificationsPage() {
@@ -67,8 +136,10 @@ export default function NotificationsPage() {
   const [pushConfigured, setPushConfigured] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
-  const [preferences, setPreferences] = useState<PushPreferences | null>(null);
+  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
   const [preferencesBusy, setPreferencesBusy] = useState(false);
+  const [quietStart, setQuietStart] = useState('22:00');
+  const [quietEnd, setQuietEnd] = useState('08:00');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -78,28 +149,40 @@ export default function NotificationsPage() {
   }, []);
 
   useEffect(() => {
+    if (!preferences) return;
+    setQuietStart(toTimeInputValue(preferences.quietHoursStartMinutes));
+    setQuietEnd(toTimeInputValue(preferences.quietHoursEndMinutes));
+  }, [preferences]);
+
+  useEffect(() => {
     if (status === 'unauthenticated') router.replace('/login');
     if (status !== 'authenticated') return;
     Promise.all([
       api<{ notifications: NotifT[] }>('/api/notifications').then((r) => setItems(r.notifications)),
       apiJson('/api/notifications/read-all', {}).then(() => mutate('/api/notifications')).catch(() => {}),
-      api<PushConfig>('/api/notifications/push-config').then(async (config) => {
-        setPushConfigured(config.enabled && Boolean(config.publicKey));
-        if (!config.enabled || !('serviceWorker' in navigator)) {
-          setPushSubscribed(false);
-          return;
-        }
-        const registration = await navigator.serviceWorker.register('/sw.js');
-        const subscription = await registration.pushManager.getSubscription();
-        setPushSubscribed(Boolean(subscription));
-      }).catch(() => {
-        setPushConfigured(false);
-      }),
-      api<{ preferences: PushPreferences }>('/api/notifications/preferences').then((r) => setPreferences(r.preferences)).catch(() => {
-        setPreferences(null);
-      }),
+      api<PushConfig>('/api/notifications/push-config')
+        .then(async (config) => {
+          setPushConfigured(config.enabled && Boolean(config.publicKey));
+          if (!config.enabled || !('serviceWorker' in navigator)) {
+            setPushSubscribed(false);
+            return;
+          }
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          const subscription = await registration.pushManager.getSubscription();
+          setPushSubscribed(Boolean(subscription));
+        })
+        .catch(() => {
+          setPushConfigured(false);
+        }),
+      api<{ preferences: NotificationPreferences }>('/api/notifications/preferences')
+        .then((r) => setPreferences(r.preferences))
+        .catch(() => {
+          setPreferences(null);
+        }),
     ]);
   }, [mutate, router, status]);
+
+  const groupedItems = useMemo(() => groupNotifications(items), [items]);
 
   async function enablePushNotifications() {
     if (!pushSupported || pushBusy) return;
@@ -152,16 +235,16 @@ export default function NotificationsPage() {
     }
   }
 
-  async function updatePreference(key: keyof PushPreferences, value: boolean) {
+  async function updatePreference(patch: Partial<NotificationPreferences>) {
     if (!preferences || preferencesBusy) return;
-    const next = { ...preferences, [key]: value };
+    const next = { ...preferences, ...patch };
     setPreferences(next);
     setPreferencesBusy(true);
 
     try {
-      const response = await apiJson<{ preferences: PushPreferences }>(
+      const response = await apiJson<{ preferences: NotificationPreferences }>(
         '/api/notifications/preferences',
-        { [key]: value },
+        patch,
         'PATCH',
       );
       setPreferences(response.preferences);
@@ -170,6 +253,17 @@ export default function NotificationsPage() {
     } finally {
       setPreferencesBusy(false);
     }
+  }
+
+  async function saveQuietHours() {
+    if (!preferences) return;
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || preferences.quietHoursTimeZone;
+    await updatePreference({
+      quietHoursEnabled: preferences.quietHoursEnabled,
+      quietHoursStartMinutes: fromTimeInputValue(quietStart),
+      quietHoursEndMinutes: fromTimeInputValue(quietEnd),
+      quietHoursTimeZone: timeZone,
+    });
   }
 
   return (
@@ -209,54 +303,116 @@ export default function NotificationsPage() {
           )}
         </div>
       </div>
+
       {preferences && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Push preferences</div>
-          <div className="space-y-3">
-            {[
-              ['pushLikeEnabled', 'Likes on your posts and comments'],
-              ['pushCommentEnabled', 'Comments on your posts'],
-              ['pushReplyEnabled', 'Replies to your comments'],
-              ['pushMentionEnabled', 'Mentions'],
-              ['pushMessageEnabled', 'Direct messages'],
-            ].map(([key, label]) => (
-              <label key={key} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-slate-700 dark:text-slate-300">{label}</span>
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Push preferences</div>
+            <div className="space-y-3">
+              {[
+                ['pushLikeEnabled', 'Likes on your posts and comments'],
+                ['pushCommentEnabled', 'Comments on your posts'],
+                ['pushReplyEnabled', 'Replies to your comments'],
+                ['pushMentionEnabled', 'Mentions'],
+                ['pushMessageEnabled', 'Direct messages'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-slate-700 dark:text-slate-300">{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={preferences[key as keyof NotificationPreferences] as boolean}
+                    disabled={preferencesBusy}
+                    onChange={(e) => updatePreference({ [key]: e.target.checked } as Partial<NotificationPreferences>)}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500 dark:border-slate-700"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Quiet hours</div>
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  Push notifications will pause during these hours in your local timezone.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.quietHoursEnabled}
+                disabled={preferencesBusy}
+                onChange={(e) => updatePreference({ quietHoursEnabled: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500 dark:border-slate-700"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-700 dark:text-slate-300">Start</span>
                 <input
-                  type="checkbox"
-                  checked={preferences[key as keyof PushPreferences]}
-                  disabled={preferencesBusy}
-                  onChange={(e) => updatePreference(key as keyof PushPreferences, e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500 dark:border-slate-700"
+                  type="time"
+                  value={quietStart}
+                  onChange={(e) => setQuietStart(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
                 />
               </label>
-            ))}
+              <label className="text-sm">
+                <span className="mb-1 block text-slate-700 dark:text-slate-300">End</span>
+                <input
+                  type="time"
+                  value={quietEnd}
+                  onChange={(e) => setQuietEnd(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                />
+              </label>
+            </div>
+
+            <div className="mt-2 text-xs text-slate-500">
+              Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone || preferences.quietHoursTimeZone}
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={saveQuietHours}
+                disabled={preferencesBusy}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+              >
+                {preferencesBusy ? 'Saving...' : 'Save quiet hours'}
+              </button>
+            </div>
           </div>
         </div>
       )}
-      {items.length === 0 ? (
+
+      {groupedItems.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-500 dark:border-slate-700">
           No activity yet.
         </div>
       ) : (
         <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-          {items.map((n) => (
-            <li key={n.id} className={n.readAt ? '' : 'bg-slate-50 dark:bg-slate-800/40'}>
-              <Link
-                href={linkFor(n)}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                <img src={avatarFor(n.actor)} alt="" className="h-10 w-10 rounded-full" />
+          {groupedItems.map((group) => (
+            <li key={group.key} className={group.unread ? 'bg-slate-50 dark:bg-slate-800/40' : ''}>
+              <Link href={group.href} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <div className="flex -space-x-2">
+                  {group.actors.slice(0, 3).map((actor) => (
+                    <img
+                      key={actor.id}
+                      src={avatarFor(actor)}
+                      alt=""
+                      className="h-10 w-10 rounded-full border-2 border-white dark:border-slate-900"
+                    />
+                  ))}
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm">
-                    <span className="font-semibold">{n.actor.displayName}</span>{' '}
-                    <span className="text-slate-600 dark:text-slate-400">{VERB[n.type]}</span>
-                    {n.type === 'LIKE' && n.targetType === 'POST' && ' post'}
-                    {n.type === 'LIKE' && n.targetType === 'COMMENT' && ' comment'}
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{summaryForGroup(group)}</span>
+                    {group.items.length > 1 && (
+                      <span className="ml-2 text-xs text-slate-500">{group.items.length} updates</span>
+                    )}
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {new Date(n.createdAt).toLocaleString()}
-                  </div>
+                  <div className="text-xs text-slate-500">{new Date(group.createdAt).toLocaleString()}</div>
                 </div>
               </Link>
             </li>

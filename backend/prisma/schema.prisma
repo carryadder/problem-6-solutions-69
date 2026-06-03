@@ -25,6 +25,10 @@ model User {
   pushReplyEnabled   Boolean @default(true)
   pushMentionEnabled Boolean @default(true)
   pushMessageEnabled Boolean @default(true)
+  quietHoursEnabled Boolean @default(false)
+  quietHoursStartMinutes Int @default(1320)
+  quietHoursEndMinutes Int @default(480)
+  quietHoursTimeZone String @default("UTC")
 
   posts                Post[]
   comments             Comment[]
@@ -117,6 +121,7 @@ model ConversationMember {
   userId         String
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   lastReadAt     DateTime?
+  pushMuted      Boolean      @default(false)
   joinedAt       DateTime     @default(now())
 
   @@id([conversationId, userId])
