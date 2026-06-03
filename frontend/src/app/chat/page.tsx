@@ -14,7 +14,10 @@ type ConvT = {
   other: { id: string; handle: string; displayName: string; profilePicture: string | null };
   lastMessage: { body: string; createdAt: string } | null;
   lastReadAt: string | null;
+  otherLastReadAt: string | null;
   pushMuted: boolean;
+  wallpaper: 'aurora' | 'midnight' | 'sunset' | 'mint' | 'graphite';
+  unreadCount: number;
 };
 
 import { motion } from 'framer-motion';
@@ -85,7 +88,14 @@ export default function ChatListPage() {
                     {c.lastMessage?.body || 'No messages yet'}
                   </div>
                 </div>
-                <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400" />
+                <div className="flex items-center gap-2">
+                  {c.unreadCount > 0 && (
+                    <span className="rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold text-white dark:bg-white dark:text-slate-900">
+                      {c.unreadCount}
+                    </span>
+                  )}
+                  <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400" />
+                </div>
               </Link>
             </motion.li>
           ))}

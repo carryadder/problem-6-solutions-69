@@ -39,6 +39,10 @@ model User {
   conversationMembers  ConversationMember[]
   messages             Message[]
   pushSubscriptions    PushSubscription[]
+  blocksInitiated      UserBlock[]         @relation("UserBlocksInitiated")
+  blocksReceived       UserBlock[]         @relation("UserBlocksReceived")
+  reportsFiled         UserReport[]        @relation("UserReportsFiled")
+  reportsReceived      UserReport[]        @relation("UserReportsReceived")
 
   @@index([handle])
   @@index([email])
@@ -113,6 +117,7 @@ model Conversation {
 
   members  ConversationMember[]
   messages Message[]
+  reports  UserReport[]
 }
 
 model ConversationMember {
@@ -122,6 +127,7 @@ model ConversationMember {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   lastReadAt     DateTime?
   pushMuted      Boolean      @default(false)
+  wallpaper      String       @default("aurora")
   joinedAt       DateTime     @default(now())
 
   @@id([conversationId, userId])
@@ -175,4 +181,33 @@ model PushSubscription {
   updatedAt  DateTime @updatedAt
 
   @@index([userId])
+}
+
+model UserBlock {
+  id            String   @id @default(cuid())
+  blockerId     String
+  blocker       User     @relation("UserBlocksInitiated", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedUserId String
+  blockedUser   User     @relation("UserBlocksReceived", fields: [blockedUserId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@unique([blockerId, blockedUserId])
+  @@index([blockedUserId])
+}
+
+model UserReport {
+  id             String        @id @default(cuid())
+  reporterId     String
+  reporter       User          @relation("UserReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUserId String
+  reportedUser   User          @relation("UserReportsReceived", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  reason         String        @db.VarChar(80)
+  details        String?       @db.VarChar(500)
+  createdAt      DateTime      @default(now())
+
+  @@index([reporterId, createdAt])
+  @@index([reportedUserId, createdAt])
+  @@index([conversationId])
 }

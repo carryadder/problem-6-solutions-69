@@ -13,6 +13,8 @@ export type ProfileT = {
   profilePicture: string | null;
   createdAt: string;
   postCount: number;
+  blockedByMe?: boolean;
+  hasBlockedMe?: boolean;
 };
 
 export type PostT = {

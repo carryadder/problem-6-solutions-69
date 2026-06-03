@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { prisma } from '../db.js';
 import { requireAuth, requireInternal, optionalAuth } from '../auth.js';
 import { generateUniqueHandle, isValidHandle } from '../util/handle.js';
+import { usersAreBlocked } from '../relationships.js';
 
 const router = Router();
 
@@ -163,7 +164,51 @@ router.get('/:handle', optionalAuth, async (req, res) => {
 
   const [postCount] = await Promise.all([prisma.post.count({ where: { authorId: user.id } })]);
 
-  res.json({ user: { ...user, postCount } });
+  let blockedByMe = false;
+  let hasBlockedMe = false;
+  if (req.user?.id) {
+    const blockState = await usersAreBlocked(req.user.id, user.id);
+    blockedByMe = blockState.blockedByMe;
+    hasBlockedMe = blockState.hasBlockedMe;
+  }
+
+  res.json({ user: { ...user, postCount, blockedByMe, hasBlockedMe } });
+});
+
+router.post('/:handle/block', requireAuth, async (req, res) => {
+  const target = await prisma.user.findUnique({ where: { handle: req.params.handle } });
+  if (!target) return res.status(404).json({ error: 'not_found' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'cannot_block_self' });
+
+  await prisma.userBlock.upsert({
+    where: {
+      blockerId_blockedUserId: {
+        blockerId: req.user.id,
+        blockedUserId: target.id,
+      },
+    },
+    update: {},
+    create: {
+      blockerId: req.user.id,
+      blockedUserId: target.id,
+    },
+  });
+
+  res.json({ ok: true, blocked: true });
+});
+
+router.delete('/:handle/block', requireAuth, async (req, res) => {
+  const target = await prisma.user.findUnique({ where: { handle: req.params.handle } });
+  if (!target) return res.status(404).json({ error: 'not_found' });
+
+  await prisma.userBlock.deleteMany({
+    where: {
+      blockerId: req.user.id,
+      blockedUserId: target.id,
+    },
+  });
+
+  res.json({ ok: true, blocked: false });
 });
 
 

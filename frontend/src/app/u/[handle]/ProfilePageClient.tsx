@@ -19,6 +19,8 @@ export default function ProfilePageClient({
   const [user, setUser] = useState<ProfileT | null>(initialUser);
   const [error, setError] = useState(false);
   const [shared, setShared] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
 
   useEffect(() => {
     api<{ user: ProfileT }>(`/api/users/${handle}`)
@@ -31,11 +33,18 @@ export default function ProfilePageClient({
 
   async function startChat() {
     if (!user) return;
-    const { conversation } = await apiJson<{ conversation: { id: string } }>(
-      '/api/conversations',
-      { withUserId: user.id },
-    );
-    router.push(`/chat/${conversation.id}`);
+    setActionMessage(null);
+    try {
+      const { conversation } = await apiJson<{ conversation: { id: string } }>(
+        '/api/conversations',
+        { withUserId: user.id },
+      );
+      router.push(`/chat/${conversation.id}`);
+    } catch (e: any) {
+      if ((e.message || '').includes('blocked')) {
+        setActionMessage('Chat is unavailable because one of you is blocked.');
+      }
+    }
   }
 
   async function shareProfile() {
@@ -52,6 +61,27 @@ export default function ProfilePageClient({
       setTimeout(() => setShared(false), 2000);
     } catch {
       // ignore
+    }
+  }
+
+  async function toggleBlock() {
+    if (!user || blockBusy) return;
+    setBlockBusy(true);
+    setActionMessage(null);
+    const nextBlocked = !user.blockedByMe;
+
+    try {
+      if (nextBlocked) {
+        await apiJson(`/api/users/${user.handle}/block`, {});
+      } else {
+        await apiJson(`/api/users/${user.handle}/block`, {}, 'DELETE');
+      }
+      setUser({ ...user, blockedByMe: nextBlocked });
+      if (nextBlocked) setActionMessage('User blocked. Messaging is disabled until you unblock them.');
+    } catch {
+      setActionMessage('Could not update block state.');
+    } finally {
+      setBlockBusy(false);
     }
   }
 
@@ -100,6 +130,8 @@ export default function ProfilePageClient({
             <div className="text-sm text-slate-500">@{user.handle}</div>
             {user.bio && <p className="mt-2 whitespace-pre-wrap text-sm">{user.bio}</p>}
             <div className="mt-2 text-xs text-slate-500">{user.postCount} posts</div>
+            {actionMessage && <div className="mt-2 text-xs text-rose-600 dark:text-rose-400">{actionMessage}</div>}
+            {user.hasBlockedMe && <div className="mt-2 text-xs text-rose-600 dark:text-rose-400">This user blocked you.</div>}
           </div>
           <div className="flex flex-wrap gap-2">
             {isMe ? (
@@ -114,9 +146,20 @@ export default function ProfilePageClient({
               <button
                 type="button"
                 onClick={startChat}
-                className="rounded-full bg-slate-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-slate-900"
+                disabled={Boolean(user.blockedByMe || user.hasBlockedMe)}
+                className="rounded-full bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-white dark:text-slate-900"
               >
                 Message
+              </button>
+            )}
+            {!isMe && (
+              <button
+                type="button"
+                onClick={toggleBlock}
+                disabled={blockBusy}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm dark:border-slate-700"
+              >
+                {user.blockedByMe ? 'Unblock' : 'Block'}
               </button>
             )}
             <button

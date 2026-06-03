@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from './db.js';
 import { redis, subRedis } from './redis.js';
 import { sendPushNotification } from './push.js';
+import { getConversationBlockState } from './relationships.js';
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'dev-secret';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
@@ -59,6 +60,10 @@ export function attachChat(httpServer) {
         where: { conversationId_userId: { conversationId, userId: user.id } },
       });
       if (!member) return ack?.({ ok: false, error: 'forbidden' });
+      const blockState = await getConversationBlockState(conversationId, user.id);
+      if (blockState.blockedByMe || blockState.hasBlockedMe) {
+        return ack?.({ ok: false, error: 'blocked' });
+      }
       socket.join(`conv:${conversationId}`);
       ack?.({ ok: true });
     });
@@ -76,6 +81,11 @@ export function attachChat(httpServer) {
         where: { conversationId_userId: { conversationId, userId: user.id } },
       });
       if (!member) return ack?.({ ok: false, error: 'forbidden' });
+
+      const blockState = await getConversationBlockState(conversationId, user.id);
+      if (blockState.blockedByMe || blockState.hasBlockedMe) {
+        return ack?.({ ok: false, error: 'blocked' });
+      }
 
       if (!(await rateLimitOk(user.id, conversationId))) {
         return ack?.({ ok: false, error: 'rate_limited' });
@@ -120,11 +130,20 @@ export function attachChat(httpServer) {
       ack?.({ ok: true, message });
     });
 
-    socket.on('typing:start', ({ conversationId }) => {
-      socket.to(`conv:${conversationId}`).emit('typing:start', { userId: user.id });
+    socket.on('typing:start', async ({ conversationId }) => {
+      const blockState = await getConversationBlockState(conversationId, user.id);
+      if (blockState.blockedByMe || blockState.hasBlockedMe) return;
+      socket.to(`conv:${conversationId}`).emit('typing:start', {
+        userId: user.id,
+        displayName: user.displayName,
+      });
     });
-    socket.on('typing:stop', ({ conversationId }) => {
-      socket.to(`conv:${conversationId}`).emit('typing:stop', { userId: user.id });
+    socket.on('typing:stop', async ({ conversationId }) => {
+      const blockState = await getConversationBlockState(conversationId, user.id);
+      if (blockState.blockedByMe || blockState.hasBlockedMe) return;
+      socket.to(`conv:${conversationId}`).emit('typing:stop', {
+        userId: user.id,
+      });
     });
 
     socket.on('read:update', async ({ conversationId }) => {

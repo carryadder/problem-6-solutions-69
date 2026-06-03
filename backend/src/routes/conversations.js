@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { isEmojiOnly } from '../util/emoji.js';
+import { getConversationBlockState, usersAreBlocked } from '../relationships.js';
 
 const router = Router();
 
@@ -27,14 +28,25 @@ router.get('/', requireAuth, async (req, res) => {
   });
 
   const convs = memberships.map((m) => {
-    const other = m.conversation.members.find((x) => x.userId !== req.user.id)?.user;
+    const otherMember = m.conversation.members.find((x) => x.userId !== req.user.id);
+    const other = otherMember?.user;
     const last = m.conversation.messages[0] || null;
     return {
       id: m.conversation.id,
       other,
       lastMessage: last,
       lastReadAt: m.lastReadAt,
+      otherLastReadAt: otherMember?.lastReadAt || null,
       pushMuted: m.pushMuted,
+      wallpaper: m.wallpaper,
+      unreadCount:
+        m.lastReadAt
+          ? m.conversation.messages.filter(
+              (message) =>
+                message.senderId !== req.user.id &&
+                new Date(message.createdAt).getTime() > new Date(m.lastReadAt).getTime(),
+            ).length
+          : m.conversation.messages.filter((message) => message.senderId !== req.user.id).length,
     };
   });
 
@@ -57,6 +69,9 @@ router.post('/', requireAuth, async (req, res) => {
 
   const other = await prisma.user.findUnique({ where: { id: parsed.data.withUserId } });
   if (!other) return res.status(404).json({ error: 'user_not_found' });
+
+  const blockState = await usersAreBlocked(req.user.id, other.id);
+  if (blockState.blocked) return res.status(403).json({ error: 'blocked' });
 
   // Find existing 1:1 conversation
   const existing = await prisma.conversation.findFirst({
@@ -92,20 +107,27 @@ router.get('/:id', requireAuth, async (req, res) => {
   });
   if (!member) return res.status(403).json({ error: 'forbidden' });
 
-  const other = member.conversation.members.find((x) => x.userId !== req.user.id)?.user || null;
+  const otherMember = member.conversation.members.find((x) => x.userId !== req.user.id) || null;
+  const other = otherMember?.user || null;
+  const blockState = other ? await usersAreBlocked(req.user.id, other.id) : { blockedByMe: false, hasBlockedMe: false };
 
   res.json({
     conversation: {
       id: member.conversationId,
       other,
       lastReadAt: member.lastReadAt,
+      otherLastReadAt: otherMember?.lastReadAt || null,
       pushMuted: member.pushMuted,
+      wallpaper: member.wallpaper,
+      blockedByMe: blockState.blockedByMe,
+      hasBlockedMe: blockState.hasBlockedMe,
     },
   });
 });
 
 const PreferencesSchema = z.object({
-  pushMuted: z.boolean(),
+  pushMuted: z.boolean().optional(),
+  wallpaper: z.enum(['aurora', 'midnight', 'sunset', 'mint', 'graphite']).optional(),
 });
 
 router.patch('/:id/preferences', requireAuth, async (req, res) => {
@@ -114,13 +136,50 @@ router.patch('/:id/preferences', requireAuth, async (req, res) => {
 
   const member = await prisma.conversationMember.update({
     where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
-    data: { pushMuted: parsed.data.pushMuted },
-    select: { pushMuted: true },
+    data: parsed.data,
+    select: { pushMuted: true, wallpaper: true },
   }).catch(() => null);
 
   if (!member) return res.status(403).json({ error: 'forbidden' });
 
   res.json({ preferences: member });
+});
+
+const ReportSchema = z.object({
+  reason: z.string().min(3).max(80),
+  details: z.string().max(500).optional().or(z.literal('')),
+});
+
+router.post('/:id/report', requireAuth, async (req, res) => {
+  const parsed = ReportSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const member = await prisma.conversationMember.findUnique({
+    where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
+    include: {
+      conversation: {
+        include: {
+          members: { select: { userId: true } },
+        },
+      },
+    },
+  });
+  if (!member) return res.status(403).json({ error: 'forbidden' });
+
+  const otherUserId = member.conversation.members.find((conversationMember) => conversationMember.userId !== req.user.id)?.userId;
+  if (!otherUserId) return res.status(400).json({ error: 'invalid_conversation' });
+
+  await prisma.userReport.create({
+    data: {
+      reporterId: req.user.id,
+      reportedUserId: otherUserId,
+      conversationId: req.params.id,
+      reason: parsed.data.reason.trim(),
+      details: parsed.data.details?.trim() || null,
+    },
+  });
+
+  res.status(201).json({ ok: true });
 });
 
 router.get('/:id/messages', requireAuth, async (req, res) => {
@@ -155,6 +214,11 @@ router.post('/:id/messages', requireAuth, async (req, res) => {
     where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
   });
   if (!member) return res.status(403).json({ error: 'forbidden' });
+
+  const blockState = await getConversationBlockState(req.params.id, req.user.id);
+  if (blockState.blockedByMe || blockState.hasBlockedMe) {
+    return res.status(403).json({ error: 'blocked' });
+  }
 
   const message = await prisma.message.create({
     data: {
