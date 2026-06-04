@@ -13,7 +13,9 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
+  CheckSquare2,
   Forward,
+  ImageIcon,
   MessageSquare,
   Mic,
   MicOff,
@@ -25,6 +27,7 @@ import {
   ShieldAlert,
   ShieldBan,
   Smile,
+  SquarePen,
   Star,
   Trash2,
   X,
@@ -37,6 +40,7 @@ type MessagePreview = {
   id: string;
   body: string;
   audioUrl: string | null;
+  editedAt: string | null;
   deletedForEveryoneAt: string | null;
   sender: Sender;
 };
@@ -46,6 +50,7 @@ type MessageT = {
   senderId: string;
   body: string;
   audioUrl: string | null;
+  editedAt: string | null;
   deletedForEveryoneAt: string | null;
   createdAt: string;
   sender: Sender;
@@ -171,7 +176,11 @@ export default function ChatThreadPage() {
   const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [blockBusy, setBlockBusy] = useState(false);
   const [replyTarget, setReplyTarget] = useState<MessageT | null>(null);
+  const [editTarget, setEditTarget] = useState<MessageT | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
@@ -182,6 +191,9 @@ export default function ChatThreadPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MessageT[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [mediaItems, setMediaItems] = useState<MessageT[]>([]);
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -398,6 +410,26 @@ export default function ChatThreadPage() {
   }, [params.id, searchOpen, searchQuery]);
 
   useEffect(() => {
+    if (!mediaOpen) return;
+    let cancelled = false;
+    setMediaBusy(true);
+    api<{ messages: MessageT[] }>(`/api/conversations/${params.id}/media`)
+      .then((response) => {
+        if (!cancelled) setMediaItems(response.messages);
+      })
+      .catch(() => {
+        if (!cancelled) setMediaItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMediaBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaOpen, params.id]);
+
+  useEffect(() => {
     return () => {
       if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
       recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -422,12 +454,43 @@ export default function ChatThreadPage() {
     }
   }
 
+  function toggleSelected(messageId: string) {
+    setSelectedIds((current) =>
+      current.includes(messageId) ? current.filter((id) => id !== messageId) : [...current, messageId],
+    );
+  }
+
+  function clearSelection() {
+    setSelectionMode(false);
+    setSelectedIds([]);
+  }
+
   async function send() {
     const body = draft.trim();
     if (!body || sending || composerDisabled) return;
 
     setSending(true);
     setError(null);
+
+    if (editTarget) {
+      try {
+        const res = await apiJson<{ message: MessageT }>(
+          `/api/conversations/${params.id}/messages/${editTarget.id}`,
+          { body },
+          'PATCH',
+        );
+        setMessages((prev) => prev.map((message) => (message.id === editTarget.id ? res.message : message)));
+        setDraft('');
+        setEditTarget(null);
+      } catch (editError: any) {
+        if ((editError.message || '').includes('emoji_only')) setError('Only emoji are allowed in chat.');
+        else setError('Could not edit message.');
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
     socketRef.current?.emit('typing:stop', { conversationId: params.id });
     startedTypingRef.current = false;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
@@ -454,6 +517,35 @@ export default function ChatThreadPage() {
         setReplyTarget(null);
       },
     );
+  }
+
+  async function applyBulkAction(action: 'star' | 'unstar' | 'delete_me') {
+    if (selectedIds.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await apiJson<{ ok: true; messageIds: string[]; action: 'star' | 'unstar' | 'delete_me' }>(
+        `/api/conversations/${params.id}/messages/bulk`,
+        { action, messageIds: selectedIds },
+      );
+      if (action === 'delete_me') {
+        const deleted = new Set(res.messageIds);
+        setMessages((prev) => prev.filter((message) => !deleted.has(message.id)));
+      } else {
+        const updated = new Set(res.messageIds);
+        setMessages((prev) =>
+          prev.map((message) =>
+            updated.has(message.id)
+              ? { ...message, starredByMe: action === 'star' }
+              : message,
+          ),
+        );
+      }
+      clearSelection();
+    } catch {
+      setError('Could not apply bulk action.');
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   async function toggleMute() {
@@ -702,11 +794,33 @@ export default function ChatThreadPage() {
             <div className="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
+                onClick={() => {
+                  if (selectionMode) {
+                    clearSelection();
+                    return;
+                  }
+                  setSelectionMode(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
+              >
+                <CheckSquare2 className="h-3.5 w-3.5" />
+                <span>{selectionMode ? 'Cancel' : 'Select'}</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setSearchOpen((value) => !value)}
                 className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
               >
                 <Search className="h-3.5 w-3.5" />
                 <span>Search</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMediaOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
+              >
+                <ImageIcon className="h-3.5 w-3.5" />
+                <span>Media</span>
               </button>
               {conversation && (
                 <button
@@ -860,6 +974,15 @@ export default function ChatThreadPage() {
           </div>
         )}
 
+        {selectionMode && (
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/60 bg-white/75 px-4 py-3 text-sm shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/60">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">{selectedIds.length} selected</span>
+            <button type="button" onClick={() => void applyBulkAction('star')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm disabled:opacity-50 dark:bg-slate-900 dark:text-slate-200">Star</button>
+            <button type="button" onClick={() => void applyBulkAction('unstar')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm disabled:opacity-50 dark:bg-slate-900 dark:text-slate-200">Unstar</button>
+            <button type="button" onClick={() => void applyBulkAction('delete_me')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm disabled:opacity-50 dark:bg-rose-950/40 dark:text-rose-300">Delete for me</button>
+          </div>
+        )}
+
         <div ref={scrollRef} className={`relative flex-1 overflow-y-auto rounded-[32px] border border-white/50 ${wallpaper.bubble} p-4 shadow-inner backdrop-blur-sm dark:border-white/10`}>
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent,rgba(255,255,255,0.14))] dark:bg-[linear-gradient(transparent,rgba(255,255,255,0.02))]" />
           <div className="relative flex min-h-full flex-col gap-3">
@@ -923,13 +1046,24 @@ export default function ChatThreadPage() {
 
                         <button
                           type="button"
-                          onClick={() => setActiveMessageId((value) => (value === message.id ? null : message.id))}
+                          onClick={() => {
+                            if (selectionMode) {
+                              toggleSelected(message.id);
+                              return;
+                            }
+                            setActiveMessageId((value) => (value === message.id ? null : message.id));
+                          }}
                           className={`relative rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
                             isMe
                               ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                               : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
-                          } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'}`}
+                          } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-rose-400' : ''}`}
                         >
+                          {selectionMode && (
+                            <span className="absolute left-3 top-3 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+                              {selectedIds.includes(message.id) ? 'Selected' : 'Tap'}
+                            </span>
+                          )}
                           {message.starredByMe && (
                             <span className={`absolute right-3 top-3 ${isMe ? 'text-amber-300 dark:text-amber-500' : 'text-amber-500'}`}>
                               <Star className="h-3.5 w-3.5 fill-current" />
@@ -960,6 +1094,7 @@ export default function ChatThreadPage() {
                           )}
                           <div className={`mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${isMe ? 'justify-end text-white/60 dark:text-slate-500' : 'justify-start text-slate-500 dark:text-slate-400'}`}>
                             <span>{formatTime(message.createdAt)}</span>
+                            {message.editedAt && <span>Edited</span>}
                             {isMe && isLastOwnMessage && (
                               <span>{otherSeenLatestOwnMessage ? 'Seen' : 'Delivered'}</span>
                             )}
@@ -981,7 +1116,7 @@ export default function ChatThreadPage() {
                           </div>
                         )}
 
-                        {activeMessageId === message.id && !composerDisabled && !message.deletedForEveryoneAt && (
+                        {activeMessageId === message.id && !selectionMode && !composerDisabled && !message.deletedForEveryoneAt && (
                           <div className={`mt-2 flex flex-wrap gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                             <div className="flex rounded-full bg-white/80 p-1 shadow-sm dark:bg-slate-900/75">
                               {REACTION_EMOJI.map((emoji) => (
@@ -997,6 +1132,9 @@ export default function ChatThreadPage() {
                             </div>
                             <button type="button" onClick={() => { setReplyTarget(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Reply className="h-3.5 w-3.5" />Reply</button>
                             <button type="button" onClick={() => { setForwardSource(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Forward className="h-3.5 w-3.5" />Forward</button>
+                            {isMe && !message.audioUrl && (
+                              <button type="button" onClick={() => { setEditTarget(message); setReplyTarget(null); setDraft(message.body); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><SquarePen className="h-3.5 w-3.5" />Edit</button>
+                            )}
                             <button type="button" onClick={() => void toggleStar(message)} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Star className={`h-3.5 w-3.5 ${message.starredByMe ? 'fill-current text-amber-500' : ''}`} />{message.starredByMe ? 'Unstar' : 'Star'}</button>
                             <button type="button" onClick={() => void togglePinned(message)} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Pin className="h-3.5 w-3.5" />{conversation?.pinnedMessage?.id === message.id ? 'Unpin' : 'Pin'}</button>
                             <button type="button" onClick={() => void deleteMessage(message, 'me')} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Trash2 className="h-3.5 w-3.5" />Delete for me</button>
@@ -1034,6 +1172,15 @@ export default function ChatThreadPage() {
         )}
 
         <div className="rounded-[28px] border border-white/60 bg-white/78 p-2 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/72">
+          {editTarget && (
+            <div className="mb-2 flex items-start justify-between rounded-2xl bg-amber-50/90 px-4 py-3 text-sm dark:bg-amber-950/25">
+              <div>
+                <div className="font-semibold text-amber-700 dark:text-amber-300">Editing message</div>
+                <div className="text-amber-700/80 dark:text-amber-300/80">{messageSnippet(editTarget)}</div>
+              </div>
+              <button type="button" onClick={() => { setEditTarget(null); setDraft(''); }} className="text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"><X className="h-4 w-4" /></button>
+            </div>
+          )}
           {replyTarget && (
             <div className="mb-2 flex items-start justify-between rounded-2xl bg-slate-100/80 px-4 py-3 text-sm dark:bg-slate-900/80">
               <div>
@@ -1091,10 +1238,56 @@ export default function ChatThreadPage() {
               />
             </div>
 
-            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"><Send className="h-4 w-4" /></button>
+            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"><Send className="h-4 w-4" /><span>{editTarget ? 'Save' : ''}</span></button>
           </div>
         </div>
       </div>
+
+      {mediaOpen && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-[28px] border border-white/20 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-lg font-bold text-slate-900 dark:text-white">Shared media</div>
+                <div className="text-sm text-slate-500 dark:text-slate-400">Voice notes and chat media in this conversation.</div>
+              </div>
+              <button type="button" onClick={() => setMediaOpen(false)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto">
+              {mediaBusy && <div className="text-sm text-slate-500">Loading shared media...</div>}
+              {!mediaBusy && mediaItems.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700">
+                  No shared media yet.
+                </div>
+              )}
+              {mediaItems.map((item) => (
+                <div key={item.id} className="rounded-3xl border border-slate-200/70 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                  <div className="mb-3 flex items-center gap-3">
+                    <img src={avatarFor(item.sender)} alt="" className="h-10 w-10 rounded-2xl object-cover" />
+                    <div>
+                      <div className="font-semibold text-slate-900 dark:text-white">{item.sender.displayName}</div>
+                      <div className="text-xs text-slate-500">{formatDay(item.createdAt)} at {formatTime(item.createdAt)}</div>
+                    </div>
+                  </div>
+                  {item.audioUrl ? (
+                    <audio controls className="w-full">
+                      <source src={item.audioUrl} />
+                    </audio>
+                  ) : (
+                    <div className="text-sm text-slate-500">{messageSnippet(item)}</div>
+                  )}
+                  <div className="mt-3 flex justify-end">
+                    <button type="button" onClick={() => { setMediaOpen(false); jumpToMessage(item.id); }} className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">
+                      Jump to message
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {forwardSource && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">

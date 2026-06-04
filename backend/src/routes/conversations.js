@@ -377,6 +377,37 @@ router.post('/:id/voice', requireAuth, upload.single('audio'), async (req, res) 
 
 const ReactionSchema = z.object({ emoji: z.string().min(1).max(16) });
 
+const EditSchema = z.object({
+  body: z.string().min(1).max(500),
+});
+
+router.patch('/:id/messages/:messageId', requireAuth, async (req, res) => {
+  const parsed = EditSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+  if (!isEmojiOnly(parsed.data.body)) return res.status(400).json({ error: 'emoji_only' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== req.params.id) return res.status(404).json({ error: 'not_found' });
+  if (message.senderId !== req.user.id) return res.status(403).json({ error: 'forbidden' });
+  if (message.audioUrl || message.deletedForEveryoneAt) return res.status(400).json({ error: 'not_editable' });
+
+  const updated = await prisma.message.update({
+    where: { id: req.params.messageId },
+    data: {
+      body: parsed.data.body,
+      editedAt: new Date(),
+    },
+    include: chatMessageInclude,
+  });
+
+  const decorated = await decorateMessageForUser(updated, req.user.id);
+  emitConversationEvent(req.params.id, 'message:update', { message: decorated });
+  res.json({ message: decorated });
+});
+
 router.post('/:id/messages/:messageId/reaction', requireAuth, async (req, res) => {
   const parsed = ReactionSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
@@ -415,6 +446,49 @@ router.post('/:id/messages/:messageId/reaction', requireAuth, async (req, res) =
 
   const updated = await updateMessageReactions(req.params.messageId);
   res.json({ reactions: updated?.reactions || [] });
+});
+
+const BulkSchema = z.object({
+  action: z.enum(['star', 'unstar', 'delete_me']),
+  messageIds: z.array(z.string().min(1)).min(1).max(100),
+});
+
+router.post('/:id/messages/bulk', requireAuth, async (req, res) => {
+  const parsed = BulkSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const messages = await prisma.message.findMany({
+    where: {
+      conversationId: req.params.id,
+      id: { in: parsed.data.messageIds },
+    },
+    select: { id: true },
+  });
+  const validIds = messages.map((message) => message.id);
+
+  if (parsed.data.action === 'star') {
+    await prisma.messageStar.createMany({
+      data: validIds.map((messageId) => ({ messageId, userId: req.user.id })),
+      skipDuplicates: true,
+    });
+  } else if (parsed.data.action === 'unstar') {
+    await prisma.messageStar.deleteMany({
+      where: {
+        userId: req.user.id,
+        messageId: { in: validIds },
+      },
+    });
+  } else if (parsed.data.action === 'delete_me') {
+    await prisma.messageHidden.createMany({
+      data: validIds.map((messageId) => ({ messageId, userId: req.user.id })),
+      skipDuplicates: true,
+    });
+  }
+
+  res.json({ ok: true, messageIds: validIds, action: parsed.data.action });
 });
 
 router.post('/:id/messages/:messageId/star', requireAuth, async (req, res) => {
@@ -498,6 +572,26 @@ router.post('/:id/messages/:messageId/delete', requireAuth, async (req, res) => 
   }
 
   res.json({ ok: true, scope: 'everyone' });
+});
+
+router.get('/:id/media', requireAuth, async (req, res) => {
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const messages = await prisma.message.findMany({
+    where: {
+      conversationId: req.params.id,
+      hiddenBy: { none: { userId: req.user.id } },
+      deletedForEveryoneAt: null,
+      OR: [{ audioUrl: { not: null } }],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    include: chatMessageInclude,
+  });
+
+  const decorated = await decorateMessagesForUser(messages, req.user.id);
+  res.json({ messages: decorated });
 });
 
 const ForwardSchema = z.object({ messageId: z.string().min(1) });

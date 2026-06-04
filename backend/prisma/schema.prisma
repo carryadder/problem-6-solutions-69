@@ -147,6 +147,7 @@ model Message {
   sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
   body           String       @default("") @db.VarChar(500)
   audioUrl       String?
+  editedAt       DateTime?
   replyToId      String?
   replyTo        Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies        Message[]    @relation("MessageReplies")
