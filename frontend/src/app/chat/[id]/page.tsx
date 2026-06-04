@@ -808,7 +808,7 @@ export default function ChatThreadPage() {
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.24)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.18)_100%)] dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.03)_100%)]" />
 
       <div className="relative flex h-full flex-col gap-3 p-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] md:p-4">
-        <header className="rounded-[28px] border border-white/60 bg-white/70 p-3 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/55 dark:shadow-black/20">
+        <header className="relative z-30 rounded-[28px] border border-white/60 bg-white/70 p-3 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/55 dark:shadow-black/20">
           <div className="flex items-start gap-3">
             <Link href="/chat" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-slate-500 shadow-sm transition-colors hover:text-slate-900 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white">
               <ArrowLeft className="h-4 w-4" />
@@ -841,7 +841,7 @@ export default function ChatThreadPage() {
               </button>
 
               {settingsMenuOpen && (
-                <div className="absolute right-0 top-full z-20 mt-2 w-52 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/95">
+                <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/95">
                   <button
                     type="button"
                     onClick={() => {
