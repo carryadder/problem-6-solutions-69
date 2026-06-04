@@ -9,6 +9,7 @@ import { avatarFor } from '@/lib/avatar';
 import { getSocket } from '@/lib/socket';
 import { Archive, ArchiveRestore, BellOff, Briefcase, ChevronRight, MessageCircle, Star, Users } from 'lucide-react';
 import Loader from '@/components/Loader';
+import { motion } from 'framer-motion';
 
 type ConvT = {
   id: string;
@@ -26,7 +27,7 @@ type ConvT = {
 function chatPreview(conversation: ConvT, meId?: string) {
   if (!conversation.lastMessage) return 'No messages yet';
   const prefix = conversation.lastMessage.senderId && meId && conversation.lastMessage.senderId === meId ? 'You: ' : '';
-  if (conversation.lastMessage.imageUrl) return 'Photo';
+  if (conversation.lastMessage.imageUrl) return `${prefix}Photo`;
   if (conversation.lastMessage.audioUrl) return `${prefix}Voice note`;
   return `${prefix}${conversation.lastMessage.body || 'Message'}`;
 }
@@ -46,8 +47,6 @@ const FOLDERS: Array<{ id: ConvT['folder']; label: string; icon: typeof Users }>
   { id: 'work', label: 'Work', icon: Briefcase },
   { id: 'saved', label: 'Saved', icon: Star },
 ];
-
-import { motion } from 'framer-motion';
 
 export default function ChatListPage() {
   const { status, data: session } = useSession();
@@ -238,27 +237,38 @@ export default function ChatListPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
-              <div className="group rounded-[30px] border border-slate-200/70 bg-white/80 px-4 py-4 shadow-soft backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/70 dark:bg-slate-900/60">
+              <div
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(`/chat/${c.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    router.push(`/chat/${c.id}`);
+                  }
+                }}
+                className="group cursor-pointer rounded-[30px] border border-slate-200/70 bg-white/80 px-4 py-4 shadow-soft backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/70 dark:bg-slate-900/60"
+              >
                 <div className="flex items-start gap-3">
-                  <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="flex min-w-0 flex-1 items-center gap-4">
                     <div className="rounded-full bg-gradient-to-br from-fuchsia-500 via-rose-500 to-orange-400 p-[2px] shadow-sm">
                       <img src={avatarFor(c.other)} alt="" className="h-12 w-12 rounded-full object-cover bg-white dark:bg-slate-950" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                      <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
-                      {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
-                      <span className="truncate text-xs text-slate-400 dark:text-slate-500">{formatRelative(c.lastMessage?.createdAt)}</span>
-                    </div>
-                    <div className="mt-1 truncate text-[14px] font-medium text-slate-500">
-                      {typingByConversation[c.id] ? (
-                        <span className="text-emerald-600 dark:text-emerald-400">{typingByConversation[c.id]} is typing...</span>
-                      ) : (
-                        chatPreview(c, meId)
-                      )}
+                        <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
+                        {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
+                        <span className="truncate text-xs text-slate-400 dark:text-slate-500">{formatRelative(c.lastMessage?.createdAt)}</span>
+                      </div>
+                      <div className="mt-1 truncate text-[14px] font-medium text-slate-500">
+                        {typingByConversation[c.id] ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">{typingByConversation[c.id]} is typing...</span>
+                        ) : (
+                          chatPreview(c, meId)
+                        )}
+                      </div>
                     </div>
                   </div>
-                </Link>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-end gap-2">
                       {c.unreadCount > 0 && (
@@ -276,7 +286,10 @@ export default function ChatListPage() {
                   </span>
                     <button
                       type="button"
-                      onClick={() => void updateConversation(c.id, { archived: !c.archivedAt })}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void updateConversation(c.id, { archived: !c.archivedAt });
+                      }}
                       className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                       {c.archivedAt ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
@@ -285,7 +298,10 @@ export default function ChatListPage() {
                       <button
                         key={folder.id}
                         type="button"
-                        onClick={() => void updateConversation(c.id, { folder: folder.id })}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void updateConversation(c.id, { folder: folder.id });
+                        }}
                         className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                       >
                         {folder.label}
