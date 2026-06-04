@@ -38,6 +38,8 @@ model User {
   notificationsCreated Notification[]      @relation("NotificationActor")
   conversationMembers  ConversationMember[]
   messages             Message[]
+  messageStars         MessageStar[]
+  hiddenMessages       MessageHidden[]
   messageReactions     MessageReaction[]
   pushSubscriptions    PushSubscription[]
   blocksInitiated      UserBlock[]         @relation("UserBlocksInitiated")
@@ -115,6 +117,8 @@ model Share {
 model Conversation {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  pinnedMessageId String? @unique
+  pinnedMessage   Message? @relation("PinnedConversationMessage", fields: [pinnedMessageId], references: [id], onDelete: SetNull)
 
   members  ConversationMember[]
   messages Message[]
@@ -149,8 +153,12 @@ model Message {
   forwardedFromMessageId String?
   forwardedFromMessage   Message?  @relation("ForwardedMessages", fields: [forwardedFromMessageId], references: [id], onDelete: SetNull)
   forwardedMessages      Message[] @relation("ForwardedMessages")
+  deletedForEveryoneAt DateTime?
   createdAt      DateTime     @default(now())
   reactions      MessageReaction[]
+  stars          MessageStar[]
+  hiddenBy       MessageHidden[]
+  pinnedInConversation Conversation? @relation("PinnedConversationMessage")
 
   @@index([conversationId, createdAt])
   @@index([replyToId])
@@ -164,6 +172,30 @@ model MessageReaction {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, createdAt])
+}
+
+model MessageStar {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, createdAt])
+}
+
+model MessageHidden {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@unique([messageId, userId])

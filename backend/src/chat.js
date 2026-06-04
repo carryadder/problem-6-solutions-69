@@ -27,6 +27,7 @@ export const chatMessageInclude = {
       id: true,
       body: true,
       audioUrl: true,
+      deletedForEveryoneAt: true,
       sender: { select: authorSelect },
     },
   },
@@ -35,6 +36,7 @@ export const chatMessageInclude = {
       id: true,
       body: true,
       audioUrl: true,
+      deletedForEveryoneAt: true,
       sender: { select: authorSelect },
     },
   },
@@ -58,7 +60,7 @@ export function emitUserNotification(userId, payload) {
   void sendPushNotification(userId, payload);
 }
 
-function emitConversationEvent(conversationId, event, payload) {
+export function emitConversationEvent(conversationId, event, payload) {
   ioInstance?.to(`conv:${conversationId}`).emit(event, payload);
 }
 

@@ -11,6 +11,8 @@ import {
   broadcastConversationMessage,
   chatMessageInclude,
   createConversationMessage,
+  emitConversationEvent,
+  loadConversationMessage,
   updateMessageReactions,
 } from '../chat.js';
 
@@ -56,6 +58,28 @@ async function ensureConversationAccess(conversationId, userId) {
   return { ok: true, member, blockState };
 }
 
+async function decorateMessagesForUser(messages, userId) {
+  if (messages.length === 0) return [];
+  const stars = await prisma.messageStar.findMany({
+    where: {
+      userId,
+      messageId: { in: messages.map((message) => message.id) },
+    },
+    select: { messageId: true },
+  });
+  const starredIds = new Set(stars.map((star) => star.messageId));
+  return messages.map((message) => ({
+    ...message,
+    starredByMe: starredIds.has(message.id),
+  }));
+}
+
+async function decorateMessageForUser(message, userId) {
+  if (!message) return null;
+  const [decorated] = await decorateMessagesForUser([message], userId);
+  return decorated;
+}
+
 router.get('/', requireAuth, async (req, res) => {
   const memberships = await prisma.conversationMember.findMany({
     where: { userId: req.user.id },
@@ -64,6 +88,9 @@ router.get('/', requireAuth, async (req, res) => {
         include: {
           members: { include: { user: { select: authorSelect } } },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+          pinnedMessage: {
+            include: chatMessageInclude,
+          },
         },
       },
     },
@@ -81,6 +108,7 @@ router.get('/', requireAuth, async (req, res) => {
       otherLastReadAt: otherMember?.lastReadAt || null,
       pushMuted: m.pushMuted,
       wallpaper: m.wallpaper,
+      pinnedMessage: m.conversation.pinnedMessage,
       unreadCount:
         m.lastReadAt
           ? m.conversation.messages.filter(
@@ -143,6 +171,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       conversation: {
         include: {
           members: { include: { user: { select: authorSelect } } },
+          pinnedMessage: { include: chatMessageInclude },
         },
       },
     },
@@ -161,6 +190,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       otherLastReadAt: otherMember?.lastReadAt || null,
       pushMuted: member.pushMuted,
       wallpaper: member.wallpaper,
+      pinnedMessage: member.conversation.pinnedMessage,
       blockedByMe: blockState.blockedByMe,
       hasBlockedMe: blockState.hasBlockedMe,
     },
@@ -185,6 +215,37 @@ router.patch('/:id/preferences', requireAuth, async (req, res) => {
   if (!member) return res.status(403).json({ error: 'forbidden' });
 
   res.json({ preferences: member });
+});
+
+const PinSchema = z.object({
+  messageId: z.string().min(1).nullable(),
+});
+
+router.patch('/:id/pin', requireAuth, async (req, res) => {
+  const parsed = PinSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  if (parsed.data.messageId) {
+    const message = await prisma.message.findUnique({ where: { id: parsed.data.messageId } });
+    if (!message || message.conversationId !== req.params.id) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+  }
+
+  const conversation = await prisma.conversation.update({
+    where: { id: req.params.id },
+    data: { pinnedMessageId: parsed.data.messageId },
+    include: { pinnedMessage: { include: chatMessageInclude } },
+  });
+
+  emitConversationEvent(req.params.id, 'conversation:pin', {
+    pinnedMessage: conversation.pinnedMessage,
+  });
+
+  res.json({ pinnedMessage: conversation.pinnedMessage });
 });
 
 const ReportSchema = z.object({
@@ -234,7 +295,10 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
   const cursor = req.query.cursor ? { id: req.query.cursor } : undefined;
 
   const messages = await prisma.message.findMany({
-    where: { conversationId: req.params.id },
+    where: {
+      conversationId: req.params.id,
+      hiddenBy: { none: { userId: req.user.id } },
+    },
     orderBy: { createdAt: 'desc' },
     take: limit,
     skip: cursor ? 1 : 0,
@@ -242,7 +306,32 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     include: chatMessageInclude,
   });
   const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
-  res.json({ messages: messages.reverse(), nextCursor });
+  const decorated = await decorateMessagesForUser(messages.reverse(), req.user.id);
+  res.json({ messages: decorated, nextCursor });
+});
+
+router.get('/:id/search', requireAuth, async (req, res) => {
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json({ messages: [] });
+
+  const messages = await prisma.message.findMany({
+    where: {
+      conversationId: req.params.id,
+      hiddenBy: { none: { userId: req.user.id } },
+      OR: [
+        { body: { contains: q, mode: 'insensitive' } },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    include: chatMessageInclude,
+  });
+
+  const decorated = await decorateMessagesForUser(messages, req.user.id);
+  res.json({ messages: decorated });
 });
 
 const SendSchema = z.object({
@@ -267,7 +356,7 @@ router.post('/:id/messages', requireAuth, async (req, res) => {
     replyToId: parsed.data.replyToId || null,
   });
   await broadcastConversationMessage(message);
-  res.status(201).json({ message });
+  res.status(201).json({ message: await decorateMessageForUser(message, req.user.id) });
 });
 
 router.post('/:id/voice', requireAuth, upload.single('audio'), async (req, res) => {
@@ -283,7 +372,7 @@ router.post('/:id/voice', requireAuth, upload.single('audio'), async (req, res) 
     replyToId: typeof req.body.replyToId === 'string' && req.body.replyToId ? req.body.replyToId : null,
   });
   await broadcastConversationMessage(message);
-  res.status(201).json({ message });
+  res.status(201).json({ message: await decorateMessageForUser(message, req.user.id) });
 });
 
 const ReactionSchema = z.object({ emoji: z.string().min(1).max(16) });
@@ -328,6 +417,89 @@ router.post('/:id/messages/:messageId/reaction', requireAuth, async (req, res) =
   res.json({ reactions: updated?.reactions || [] });
 });
 
+router.post('/:id/messages/:messageId/star', requireAuth, async (req, res) => {
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== req.params.id) return res.status(404).json({ error: 'not_found' });
+
+  await prisma.messageStar.upsert({
+    where: { messageId_userId: { messageId: req.params.messageId, userId: req.user.id } },
+    update: {},
+    create: { messageId: req.params.messageId, userId: req.user.id },
+  });
+
+  res.json({ ok: true, starred: true });
+});
+
+router.delete('/:id/messages/:messageId/star', requireAuth, async (req, res) => {
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  await prisma.messageStar.deleteMany({
+    where: { messageId: req.params.messageId, userId: req.user.id },
+  });
+
+  res.json({ ok: true, starred: false });
+});
+
+const DeleteSchema = z.object({
+  scope: z.enum(['me', 'everyone']),
+});
+
+router.post('/:id/messages/:messageId/delete', requireAuth, async (req, res) => {
+  const parsed = DeleteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const message = await prisma.message.findUnique({
+    where: { id: req.params.messageId },
+    include: chatMessageInclude,
+  });
+  if (!message || message.conversationId !== req.params.id) return res.status(404).json({ error: 'not_found' });
+
+  if (parsed.data.scope === 'me') {
+    await prisma.messageHidden.upsert({
+      where: { messageId_userId: { messageId: req.params.messageId, userId: req.user.id } },
+      update: {},
+      create: { messageId: req.params.messageId, userId: req.user.id },
+    });
+    return res.json({ ok: true, scope: 'me' });
+  }
+
+  if (message.senderId !== req.user.id) return res.status(403).json({ error: 'forbidden' });
+
+  const updated = await prisma.message.update({
+    where: { id: req.params.messageId },
+    data: {
+      body: '',
+      audioUrl: null,
+      replyToId: null,
+      forwardedFromMessageId: null,
+      deletedForEveryoneAt: new Date(),
+      reactions: { deleteMany: {} },
+    },
+    include: chatMessageInclude,
+  });
+
+  emitConversationEvent(req.params.id, 'message:update', {
+    message: { ...updated, starredByMe: false },
+  });
+
+  if (updated.id === (await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { pinnedMessageId: true } }))?.pinnedMessageId) {
+    await prisma.conversation.update({
+      where: { id: req.params.id },
+      data: { pinnedMessageId: null },
+    });
+    emitConversationEvent(req.params.id, 'conversation:pin', { pinnedMessage: null });
+  }
+
+  res.json({ ok: true, scope: 'everyone' });
+});
+
 const ForwardSchema = z.object({ messageId: z.string().min(1) });
 
 router.post('/:id/forward', requireAuth, async (req, res) => {
@@ -362,7 +534,7 @@ router.post('/:id/forward', requireAuth, async (req, res) => {
   });
 
   await broadcastConversationMessage(forwarded);
-  res.status(201).json({ message: forwarded });
+  res.status(201).json({ message: await decorateMessageForUser(forwarded, req.user.id) });
 });
 
 router.post('/:id/read', requireAuth, async (req, res) => {

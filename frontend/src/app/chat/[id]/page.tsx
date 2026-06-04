@@ -18,13 +18,17 @@ import {
   Mic,
   MicOff,
   Palette,
+  Pin,
   Reply,
+  Search,
   Send,
   ShieldAlert,
   ShieldBan,
   Smile,
-  Flag,
+  Star,
+  Trash2,
   X,
+  Flag,
 } from 'lucide-react';
 
 type Sender = { id: string; handle: string; displayName: string; profilePicture: string | null };
@@ -33,6 +37,7 @@ type MessagePreview = {
   id: string;
   body: string;
   audioUrl: string | null;
+  deletedForEveryoneAt: string | null;
   sender: Sender;
 };
 type MessageT = {
@@ -41,11 +46,13 @@ type MessageT = {
   senderId: string;
   body: string;
   audioUrl: string | null;
+  deletedForEveryoneAt: string | null;
   createdAt: string;
   sender: Sender;
   replyTo: MessagePreview | null;
   forwardedFromMessage: MessagePreview | null;
   reactions: MessageReaction[];
+  starredByMe: boolean;
 };
 type WallpaperId = 'aurora' | 'midnight' | 'sunset' | 'mint' | 'graphite';
 type ConversationT = {
@@ -57,6 +64,7 @@ type ConversationT = {
   wallpaper: WallpaperId;
   blockedByMe: boolean;
   hasBlockedMe: boolean;
+  pinnedMessage: MessagePreview | null;
 };
 type ConversationListItem = {
   id: string;
@@ -128,8 +136,9 @@ function statusLabel(conversation: ConversationT | null, typingName: string | nu
   return 'Private end-to-end vibe';
 }
 
-function messageSnippet(message: MessagePreview | null) {
+function messageSnippet(message: MessagePreview | MessageT | null) {
   if (!message) return '';
+  if (message.deletedForEveryoneAt) return 'Deleted message';
   if (message.audioUrl) return 'Voice note';
   return message.body || 'Message';
 }
@@ -169,6 +178,11 @@ export default function ChatThreadPage() {
   const [forwardSource, setForwardSource] = useState<MessageT | null>(null);
   const [forwardTargets, setForwardTargets] = useState<ConversationListItem[]>([]);
   const [forwardBusy, setForwardBusy] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<MessageT[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -191,6 +205,8 @@ export default function ChatThreadPage() {
       conversation?.otherLastReadAt &&
       new Date(conversation.otherLastReadAt).getTime() >= new Date(lastOwnMessage.createdAt).getTime(),
   );
+
+  const composerDisabled = Boolean(conversation?.blockedByMe || conversation?.hasBlockedMe);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.replace('/login');
@@ -231,6 +247,8 @@ export default function ChatThreadPage() {
     let onTypingStop: (() => void) | null = null;
     let onReadUpdate: ((payload: { userId: string; at: string }) => void) | null = null;
     let onReactionUpdate: ((payload: { messageId: string; reactions: MessageReaction[] }) => void) | null = null;
+    let onMessageUpdate: ((payload: { message: MessageT }) => void) | null = null;
+    let onPinnedUpdate: ((payload: { pinnedMessage: MessagePreview | null }) => void) | null = null;
 
     getSocket()
       .then((socket) => {
@@ -262,6 +280,23 @@ export default function ChatThreadPage() {
           );
         };
 
+        onMessageUpdate = ({ message }: { message: MessageT }) => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === message.id
+                ? {
+                    ...message,
+                    starredByMe: item.starredByMe,
+                  }
+                : item,
+            ),
+          );
+        };
+
+        onPinnedUpdate = ({ pinnedMessage }: { pinnedMessage: MessagePreview | null }) => {
+          setConversation((prev) => (prev ? { ...prev, pinnedMessage } : prev));
+        };
+
         socket.emit('conversation:join', params.id, (ack: { ok?: boolean; error?: string }) => {
           if (!ack?.ok && ack?.error === 'blocked') {
             setConversation((prev) => (prev ? { ...prev, hasBlockedMe: true } : prev));
@@ -274,6 +309,8 @@ export default function ChatThreadPage() {
         socket.on('typing:stop', onTypingStop);
         socket.on('read:update', onReadUpdate);
         socket.on('message:reaction:update', onReactionUpdate);
+        socket.on('message:update', onMessageUpdate);
+        socket.on('conversation:pin', onPinnedUpdate);
       })
       .catch(() => {
         setError('Realtime chat is unavailable right now.');
@@ -292,6 +329,8 @@ export default function ChatThreadPage() {
         if (onTypingStop) activeSocket.off('typing:stop', onTypingStop);
         if (onReadUpdate) activeSocket.off('read:update', onReadUpdate);
         if (onReactionUpdate) activeSocket.off('message:reaction:update', onReactionUpdate);
+        if (onMessageUpdate) activeSocket.off('message:update', onMessageUpdate);
+        if (onPinnedUpdate) activeSocket.off('conversation:pin', onPinnedUpdate);
       }
     };
   }, [meId, params.id, status]);
@@ -304,7 +343,7 @@ export default function ChatThreadPage() {
   }, [conversation?.blockedByMe, conversation?.hasBlockedMe, messages.length, params.id]);
 
   useEffect(() => {
-    if (!socketRef.current || conversation?.blockedByMe || conversation?.hasBlockedMe) return;
+    if (!socketRef.current || composerDisabled) return;
 
     if (!draft.trim()) {
       if (startedTypingRef.current) {
@@ -325,14 +364,45 @@ export default function ChatThreadPage() {
       socketRef.current?.emit('typing:stop', { conversationId: params.id });
       startedTypingRef.current = false;
     }, 1500);
-  }, [conversation?.blockedByMe, conversation?.hasBlockedMe, draft, params.id]);
+  }, [composerDisabled, draft, params.id]);
 
   useEffect(() => {
-    if (!forwardSource || forwardTargets.length > 0) return;
+    if (!forwardSource) return;
+    setForwardTargets([]);
     api<{ conversations: ConversationListItem[] }>('/api/conversations')
       .then((response) => setForwardTargets(response.conversations.filter((item) => item.id !== params.id)))
       .catch(() => setForwardTargets([]));
-  }, [forwardSource, forwardTargets.length, params.id]);
+  }, [forwardSource, params.id]);
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    let cancelled = false;
+    setSearchBusy(true);
+    api<{ messages: MessageT[] }>(`/api/conversations/${params.id}/search?q=${encodeURIComponent(searchQuery)}`)
+      .then((response) => {
+        if (!cancelled) setSearchResults(response.messages);
+      })
+      .catch(() => {
+        if (!cancelled) setSearchResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSearchBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id, searchOpen, searchQuery]);
+
+  useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
 
   function stopLocalRecording() {
     mediaRecorderRef.current?.stop();
@@ -343,9 +413,18 @@ export default function ChatThreadPage() {
     setRecordingSeconds(0);
   }
 
+  function jumpToMessage(messageId: string) {
+    const element = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (element instanceof HTMLElement) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add('ring-2', 'ring-rose-400');
+      window.setTimeout(() => element.classList.remove('ring-2', 'ring-rose-400'), 1200);
+    }
+  }
+
   async function send() {
     const body = draft.trim();
-    if (!body || sending || conversation?.blockedByMe || conversation?.hasBlockedMe) return;
+    if (!body || sending || composerDisabled) return;
 
     setSending(true);
     setError(null);
@@ -469,6 +548,50 @@ export default function ChatThreadPage() {
     }
   }
 
+  async function toggleStar(message: MessageT) {
+    try {
+      if (message.starredByMe) {
+        await apiJson(`/api/conversations/${params.id}/messages/${message.id}/star`, {}, 'DELETE');
+      } else {
+        await apiJson(`/api/conversations/${params.id}/messages/${message.id}/star`, {});
+      }
+      setMessages((prev) => prev.map((item) => (item.id === message.id ? { ...item, starredByMe: !message.starredByMe } : item)));
+    } catch {
+      setError('Could not update star.');
+    }
+  }
+
+  async function deleteMessage(message: MessageT, scope: 'me' | 'everyone') {
+    try {
+      await apiJson(`/api/conversations/${params.id}/messages/${message.id}/delete`, { scope });
+      if (scope === 'me') {
+        setMessages((prev) => prev.filter((item) => item.id !== message.id));
+        if (replyTarget?.id === message.id) setReplyTarget(null);
+      } else {
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === message.id
+              ? {
+                  ...item,
+                  body: '',
+                  audioUrl: null,
+                  replyTo: null,
+                  forwardedFromMessage: null,
+                  deletedForEveryoneAt: new Date().toISOString(),
+                  reactions: [],
+                }
+              : item,
+          ),
+        );
+        if (conversation?.pinnedMessage?.id === message.id) {
+          setConversation((prev) => (prev ? { ...prev, pinnedMessage: null } : prev));
+        }
+      }
+    } catch {
+      setError('Could not delete message.');
+    }
+  }
+
   async function startRecording() {
     if (isRecording || voiceBusy || composerDisabled) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
@@ -527,8 +650,26 @@ export default function ChatThreadPage() {
     }
   }
 
+  async function togglePinned(message: MessageT) {
+    if (!conversation || pinBusy) return;
+    setPinBusy(true);
+    try {
+      const nextMessageId = conversation.pinnedMessage?.id === message.id ? null : message.id;
+      const res = await apiJson<{ pinnedMessage: MessagePreview | null }>(
+        `/api/conversations/${params.id}/pin`,
+        { messageId: nextMessageId },
+        'PATCH',
+      );
+      setConversation({ ...conversation, pinnedMessage: res.pinnedMessage });
+      setActiveMessageId(null);
+    } catch {
+      setError('Could not update pinned message.');
+    } finally {
+      setPinBusy(false);
+    }
+  }
+
   const other = conversation?.other || messages.find((message) => message.senderId !== meId)?.sender || null;
-  const composerDisabled = Boolean(conversation?.blockedByMe || conversation?.hasBlockedMe);
 
   return (
     <div className={`absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 overflow-hidden rounded-none bg-gradient-to-br ${wallpaper.shell} md:static md:h-[calc(100vh-8rem)] md:rounded-[32px] md:border md:border-white/50 md:shadow-[0_24px_80px_rgba(15,23,42,0.12)] dark:md:border-white/10`}>
@@ -559,6 +700,14 @@ export default function ChatThreadPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSearchOpen((value) => !value)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
+              >
+                <Search className="h-3.5 w-3.5" />
+                <span>Search</span>
+              </button>
               {conversation && (
                 <button
                   type="button"
@@ -580,6 +729,55 @@ export default function ChatThreadPage() {
               </button>
             </div>
           </div>
+
+          {searchOpen && (
+            <div className="mt-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
+              <div className="flex items-center gap-2 rounded-2xl bg-slate-100/80 px-3 py-2 dark:bg-slate-900/80">
+                <Search className="h-4 w-4 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search this conversation"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                />
+              </div>
+              {searchQuery && (
+                <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
+                  {searchBusy && <div className="text-sm text-slate-500">Searching...</div>}
+                  {!searchBusy && searchResults.length === 0 && <div className="text-sm text-slate-500">No matches found.</div>}
+                  {searchResults.map((message) => (
+                    <button
+                      key={message.id}
+                      type="button"
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setSearchQuery('');
+                        jumpToMessage(message.id);
+                      }}
+                      className="block w-full rounded-2xl bg-slate-100/80 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-200 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-900"
+                    >
+                      <div className="truncate font-semibold text-slate-900 dark:text-white">{message.sender.displayName}</div>
+                      <div className="truncate">{messageSnippet(message)}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {conversation?.pinnedMessage && (
+            <button
+              type="button"
+              onClick={() => jumpToMessage(conversation.pinnedMessage!.id)}
+              className="mt-3 flex w-full items-center gap-3 rounded-3xl border border-white/60 bg-white/75 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/60"
+            >
+              <Pin className="h-4 w-4 text-rose-500" />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Pinned message</div>
+                <div className="truncate text-sm text-slate-700 dark:text-slate-300">{messageSnippet(conversation.pinnedMessage)}</div>
+              </div>
+            </button>
+          )}
 
           {appearanceOpen && (
             <div className="mt-3 space-y-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
@@ -693,7 +891,7 @@ export default function ChatThreadPage() {
               }, {});
 
               return (
-                <div key={message.id} className="space-y-2">
+                <div key={message.id} data-message-id={message.id} className="space-y-2 rounded-3xl transition-shadow">
                   {showDay && (
                     <div className="flex justify-center">
                       <div className="rounded-full bg-white/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm dark:bg-slate-900/65 dark:text-slate-400">
@@ -726,12 +924,17 @@ export default function ChatThreadPage() {
                         <button
                           type="button"
                           onClick={() => setActiveMessageId((value) => (value === message.id ? null : message.id))}
-                          className={`rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
+                          className={`relative rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
                             isMe
                               ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                               : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
                           } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'}`}
                         >
+                          {message.starredByMe && (
+                            <span className={`absolute right-3 top-3 ${isMe ? 'text-amber-300 dark:text-amber-500' : 'text-amber-500'}`}>
+                              <Star className="h-3.5 w-3.5 fill-current" />
+                            </span>
+                          )}
                           {message.forwardedFromMessage && (
                             <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/20 bg-white/10 text-white/80 dark:border-slate-300/30 dark:bg-slate-900/10 dark:text-slate-600' : 'border-slate-200/80 bg-slate-100/70 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300'}`}>
                               Forwarded from {message.forwardedFromMessage.sender.displayName}
@@ -743,11 +946,17 @@ export default function ChatThreadPage() {
                               <div className="truncate">{messageSnippet(message.replyTo)}</div>
                             </div>
                           )}
-                          {message.body && <div>{message.body}</div>}
-                          {message.audioUrl && (
-                            <audio controls className="mt-1 w-full max-w-[260px]">
-                              <source src={message.audioUrl} />
-                            </audio>
+                          {message.deletedForEveryoneAt ? (
+                            <div className="italic opacity-70">Message deleted</div>
+                          ) : (
+                            <>
+                              {message.body && <div>{message.body}</div>}
+                              {message.audioUrl && (
+                                <audio controls className="mt-1 w-full max-w-[260px]">
+                                  <source src={message.audioUrl} />
+                                </audio>
+                              )}
+                            </>
                           )}
                           <div className={`mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${isMe ? 'justify-end text-white/60 dark:text-slate-500' : 'justify-start text-slate-500 dark:text-slate-400'}`}>
                             <span>{formatTime(message.createdAt)}</span>
@@ -772,7 +981,7 @@ export default function ChatThreadPage() {
                           </div>
                         )}
 
-                        {activeMessageId === message.id && !composerDisabled && (
+                        {activeMessageId === message.id && !composerDisabled && !message.deletedForEveryoneAt && (
                           <div className={`mt-2 flex flex-wrap gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                             <div className="flex rounded-full bg-white/80 p-1 shadow-sm dark:bg-slate-900/75">
                               {REACTION_EMOJI.map((emoji) => (
@@ -786,26 +995,14 @@ export default function ChatThreadPage() {
                                 </button>
                               ))}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReplyTarget(message);
-                                setActiveMessageId(null);
-                              }}
-                              className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"
-                            >
-                              <Reply className="h-3.5 w-3.5" /> Reply
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setForwardSource(message);
-                                setActiveMessageId(null);
-                              }}
-                              className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"
-                            >
-                              <Forward className="h-3.5 w-3.5" /> Forward
-                            </button>
+                            <button type="button" onClick={() => { setReplyTarget(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Reply className="h-3.5 w-3.5" />Reply</button>
+                            <button type="button" onClick={() => { setForwardSource(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Forward className="h-3.5 w-3.5" />Forward</button>
+                            <button type="button" onClick={() => void toggleStar(message)} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Star className={`h-3.5 w-3.5 ${message.starredByMe ? 'fill-current text-amber-500' : ''}`} />{message.starredByMe ? 'Unstar' : 'Star'}</button>
+                            <button type="button" onClick={() => void togglePinned(message)} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Pin className="h-3.5 w-3.5" />{conversation?.pinnedMessage?.id === message.id ? 'Unpin' : 'Pin'}</button>
+                            <button type="button" onClick={() => void deleteMessage(message, 'me')} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Trash2 className="h-3.5 w-3.5" />Delete for me</button>
+                            {isMe && (
+                              <button type="button" onClick={() => void deleteMessage(message, 'everyone')} className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm dark:bg-rose-950/40 dark:text-rose-300"><Trash2 className="h-3.5 w-3.5" />Delete for everyone</button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -843,9 +1040,7 @@ export default function ChatThreadPage() {
                 <div className="font-semibold text-slate-700 dark:text-slate-200">Replying to {replyTarget.sender.displayName}</div>
                 <div className="text-slate-500 dark:text-slate-400">{messageSnippet(replyTarget)}</div>
               </div>
-              <button type="button" onClick={() => setReplyTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
+              <button type="button" onClick={() => setReplyTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><X className="h-4 w-4" /></button>
             </div>
           )}
 
@@ -863,22 +1058,13 @@ export default function ChatThreadPage() {
                 <span className="h-2 w-2 rounded-full bg-rose-500" />
                 Recording voice note {recordingSeconds}s
               </div>
-              <button type="button" onClick={stopLocalRecording} className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white">
-                <MicOff className="h-3.5 w-3.5" /> Stop
-              </button>
+              <button type="button" onClick={stopLocalRecording} className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white"><MicOff className="h-3.5 w-3.5" />Stop</button>
             </div>
           )}
 
           <div className="flex items-end gap-2">
             <div className="relative">
-              <button
-                type="button"
-                onClick={() => setPickerOpen((value) => !value)}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                aria-label="Emoji picker"
-              >
-                <Smile className="h-5 w-5" />
-              </button>
+              <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Emoji picker"><Smile className="h-5 w-5" /></button>
               {pickerOpen && (
                 <div className="absolute bottom-full left-0 z-50 mb-2">
                   <EmojiPicker onPick={(emoji) => { setDraft((value) => (value + emoji).slice(0, 500)); setPickerOpen(false); }} />
@@ -886,15 +1072,7 @@ export default function ChatThreadPage() {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => void startRecording()}
-              disabled={voiceBusy || composerDisabled || isRecording}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-              aria-label="Record voice note"
-            >
-              <Mic className="h-5 w-5" />
-            </button>
+            <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Record voice note"><Mic className="h-5 w-5" /></button>
 
             <div className="flex-1 rounded-[26px] bg-slate-100/80 px-4 py-2 dark:bg-slate-800/80">
               <textarea
@@ -913,14 +1091,7 @@ export default function ChatThreadPage() {
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={!draft.trim() || sending || composerDisabled}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"><Send className="h-4 w-4" /></button>
           </div>
         </div>
       </div>
@@ -933,16 +1104,7 @@ export default function ChatThreadPage() {
                 <div className="text-lg font-bold text-slate-900 dark:text-white">Forward message</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Pick a chat to forward this message.</div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setForwardSource(null);
-                  setForwardTargets([]);
-                }}
-                className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <button type="button" onClick={() => { setForwardSource(null); setForwardTargets([]); }} className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><X className="h-5 w-5" /></button>
             </div>
 
             <div className="mb-4 rounded-2xl bg-slate-100/80 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
