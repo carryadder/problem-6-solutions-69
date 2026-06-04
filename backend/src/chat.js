@@ -68,6 +68,10 @@ export function emitConversationEvent(conversationId, event, payload) {
   ioInstance?.to(`conv:${conversationId}`).emit(event, payload);
 }
 
+function emitUserEvent(userId, event, payload) {
+  ioInstance?.to(`user:${userId}`).emit(event, payload);
+}
+
 // Token-bucket rate limit: 30 messages / 10 seconds per user per conversation.
 async function rateLimitOk(userId, conversationId) {
   const key = `rl:msg:${userId}:${conversationId}`;
@@ -108,6 +112,18 @@ export async function loadConversationMessage(messageId) {
 
 export async function broadcastConversationMessage(message) {
   emitConversationEvent(message.conversationId, 'message:new', message);
+
+  const members = await prisma.conversationMember.findMany({
+    where: { conversationId: message.conversationId },
+    select: { userId: true },
+  });
+
+  for (const member of members) {
+    emitUserEvent(member.userId, 'conversation:update', {
+      conversationId: message.conversationId,
+      messageId: message.id,
+    });
+  }
 
   const others = await prisma.conversationMember.findMany({
     where: { conversationId: message.conversationId, userId: { not: message.senderId } },
@@ -236,6 +252,18 @@ export function attachChat(httpServer) {
         userId: user.id,
         displayName: user.displayName,
       });
+
+      const others = await prisma.conversationMember.findMany({
+        where: { conversationId, userId: { not: user.id } },
+        select: { userId: true },
+      });
+      for (const other of others) {
+        emitUserEvent(other.userId, 'conversation:typing', {
+          conversationId,
+          displayName: user.displayName,
+          isTyping: true,
+        });
+      }
     });
 
     socket.on('typing:stop', async ({ conversationId }) => {
@@ -244,6 +272,18 @@ export function attachChat(httpServer) {
       socket.to(`conv:${conversationId}`).emit('typing:stop', {
         userId: user.id,
       });
+
+      const others = await prisma.conversationMember.findMany({
+        where: { conversationId, userId: { not: user.id } },
+        select: { userId: true },
+      });
+      for (const other of others) {
+        emitUserEvent(other.userId, 'conversation:typing', {
+          conversationId,
+          displayName: user.displayName,
+          isTyping: false,
+        });
+      }
     });
 
     socket.on('read:update', async ({ conversationId }) => {

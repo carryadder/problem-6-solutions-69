@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { api, apiJson } from '@/lib/api';
 import { avatarFor } from '@/lib/avatar';
+import { getSocket } from '@/lib/socket';
 import { Archive, ArchiveRestore, BellOff, Briefcase, ChevronRight, MessageCircle, Star, Users } from 'lucide-react';
 import Loader from '@/components/Loader';
 
 type ConvT = {
   id: string;
   other: { id: string; handle: string; displayName: string; profilePicture: string | null };
-  lastMessage: { body: string; audioUrl?: string | null; imageUrl?: string | null; createdAt: string } | null;
+  lastMessage: { body: string; audioUrl?: string | null; imageUrl?: string | null; createdAt: string; senderId?: string } | null;
   lastReadAt: string | null;
   otherLastReadAt: string | null;
   pushMuted: boolean;
@@ -22,11 +23,12 @@ type ConvT = {
   unreadCount: number;
 };
 
-function chatPreview(conversation: ConvT) {
+function chatPreview(conversation: ConvT, meId?: string) {
   if (!conversation.lastMessage) return 'No messages yet';
+  const prefix = conversation.lastMessage.senderId && meId && conversation.lastMessage.senderId === meId ? 'You: ' : '';
   if (conversation.lastMessage.imageUrl) return 'Photo';
-  if (conversation.lastMessage.audioUrl) return 'Voice note';
-  return conversation.lastMessage.body || 'Message';
+  if (conversation.lastMessage.audioUrl) return `${prefix}Voice note`;
+  return `${prefix}${conversation.lastMessage.body || 'Message'}`;
 }
 
 function formatRelative(iso: string | null | undefined) {
@@ -48,11 +50,19 @@ const FOLDERS: Array<{ id: ConvT['folder']; label: string; icon: typeof Users }>
 import { motion } from 'framer-motion';
 
 export default function ChatListPage() {
-  const { status } = useSession();
+  const { status, data: session } = useSession();
   const router = useRouter();
   const [convs, setConvs] = useState<ConvT[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [folderFilter, setFolderFilter] = useState<ConvT['folder']>('inbox');
+  const [typingByConversation, setTypingByConversation] = useState<Record<string, string>>({});
+
+  const meId = (session as any)?.userId;
+
+  async function refreshConversations() {
+    const res = await api<{ conversations: ConvT[] }>('/api/conversations');
+    setConvs(res.conversations);
+  }
 
   async function updateConversation(id: string, patch: { archived?: boolean; folder?: ConvT['folder'] }) {
     const previous = convs;
@@ -94,9 +104,48 @@ export default function ChatListPage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.replace('/login');
     if (status === 'authenticated') {
-      api<{ conversations: ConvT[] }>('/api/conversations').then((r) => setConvs(r.conversations));
+      refreshConversations();
     }
   }, [status, router]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    let active = true;
+    let cleanup: (() => void) | undefined;
+
+    getSocket()
+      .then((socket) => {
+        if (!active) return;
+
+        const onConversationUpdate = () => {
+          refreshConversations().catch(() => {});
+        };
+
+        const onTyping = ({ conversationId, displayName, isTyping }: { conversationId: string; displayName: string; isTyping: boolean }) => {
+          setTypingByConversation((current) => {
+            if (!isTyping) {
+              const next = { ...current };
+              delete next[conversationId];
+              return next;
+            }
+            return { ...current, [conversationId]: displayName };
+          });
+        };
+
+        socket.on('conversation:update', onConversationUpdate);
+        socket.on('conversation:typing', onTyping);
+        cleanup = () => {
+          socket.off('conversation:update', onConversationUpdate);
+          socket.off('conversation:typing', onTyping);
+        };
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+      cleanup?.();
+    };
+  }, [status]);
 
   if (status !== 'authenticated') {
     return (
@@ -120,7 +169,6 @@ export default function ChatListPage() {
         className="flex items-end justify-between gap-3"
       >
         <div>
-          <div className="mb-1 text-xs font-semibold uppercase tracking-[0.32em] text-slate-400 dark:text-slate-500">Instagram-inspired</div>
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-gradient-to-br from-fuchsia-500 via-rose-500 to-orange-400 text-white shadow-lg shadow-rose-500/30">
               <MessageCircle className="h-5 w-5" />
@@ -198,15 +246,19 @@ export default function ChatListPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
-                        {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
-                        <span className="truncate text-xs text-slate-400 dark:text-slate-500">{formatRelative(c.lastMessage?.createdAt)}</span>
-                      </div>
-                      <div className="mt-1 truncate text-[14px] font-medium text-slate-500">
-                        {chatPreview(c)}
-                      </div>
+                      <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
+                      {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
+                      <span className="truncate text-xs text-slate-400 dark:text-slate-500">{formatRelative(c.lastMessage?.createdAt)}</span>
                     </div>
-                  </Link>
+                    <div className="mt-1 truncate text-[14px] font-medium text-slate-500">
+                      {typingByConversation[c.id] ? (
+                        <span className="text-emerald-600 dark:text-emerald-400">{typingByConversation[c.id]} is typing...</span>
+                      ) : (
+                        chatPreview(c, meId)
+                      )}
+                    </div>
+                  </div>
+                </Link>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-end gap-2">
                       {c.unreadCount > 0 && (
