@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Mic,
   MicOff,
+  MoreHorizontal,
   Palette,
   Pin,
   Reply,
@@ -173,6 +174,7 @@ export default function ChatThreadPage() {
   const [muteBusy, setMuteBusy] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [appearanceBusy, setAppearanceBusy] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [typingName, setTypingName] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
@@ -203,6 +205,7 @@ export default function ChatThreadPage() {
   const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedTypingRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -463,6 +466,25 @@ export default function ChatThreadPage() {
   function clearSelection() {
     setSelectionMode(false);
     setSelectedIds([]);
+  }
+
+  function clearHoldTimer() {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }
+
+  function startHoldAction(messageId: string) {
+    clearHoldTimer();
+    holdTimerRef.current = setTimeout(() => {
+      if (selectionMode) {
+        toggleSelected(messageId);
+      } else {
+        setActiveMessageId(messageId);
+      }
+      holdTimerRef.current = null;
+    }, 420);
   }
 
   async function send() {
@@ -808,56 +830,106 @@ export default function ChatThreadPage() {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="relative flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  if (selectionMode) {
-                    clearSelection();
-                    return;
-                  }
-                  setSelectionMode(true);
-                }}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
+                onClick={() => setSettingsMenuOpen((value) => !value)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
+                aria-label="Chat options"
               >
-                <CheckSquare2 className="h-3.5 w-3.5" />
-                <span>{selectionMode ? 'Cancel' : 'Select'}</span>
+                <MoreHorizontal className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={() => setSearchOpen((value) => !value)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
-              >
-                <Search className="h-3.5 w-3.5" />
-                <span>Search</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setMediaOpen(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
-              >
-                <ImageIcon className="h-3.5 w-3.5" />
-                <span>Media</span>
-              </button>
-              {conversation && (
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  disabled={muteBusy}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
-                >
-                  {conversation.pushMuted ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
-                  <span>{conversation.pushMuted ? 'Unmute' : 'Mute'}</span>
-                </button>
+
+              {settingsMenuOpen && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-52 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/95">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchOpen((value) => !value);
+                      setSettingsMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                  >
+                    <Search className="h-4 w-4" />
+                    Search chat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMediaOpen(true);
+                      setSettingsMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    Shared media
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectionMode) clearSelection();
+                      else setSelectionMode(true);
+                      setSettingsMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                  >
+                    <CheckSquare2 className="h-4 w-4" />
+                    {selectionMode ? 'Cancel selection' : 'Select messages'}
+                  </button>
+                  {conversation && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void toggleMute();
+                        setSettingsMenuOpen(false);
+                      }}
+                      disabled={muteBusy}
+                      className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-900"
+                    >
+                      {conversation.pushMuted ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                      {conversation.pushMuted ? 'Unmute notifications' : 'Mute notifications'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppearanceOpen((value) => !value);
+                      setSettingsMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                  >
+                    <Palette className="h-4 w-4" />
+                    Chat theme
+                  </button>
+                  {other && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void toggleBlock();
+                          setSettingsMenuOpen(false);
+                        }}
+                        disabled={blockBusy}
+                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-900"
+                      >
+                        <ShieldBan className="h-4 w-4" />
+                        {conversation?.blockedByMe ? 'Unblock user' : 'Block user'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportOpen((value) => !value);
+                          setSettingsMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                      >
+                        <Flag className="h-4 w-4" />
+                        Report user
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
-              <button
-                type="button"
-                onClick={() => setAppearanceOpen((value) => !value)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
-              >
-                <Palette className="h-3.5 w-3.5" />
-                <span>Style</span>
-              </button>
             </div>
           </div>
 
@@ -1065,22 +1137,29 @@ export default function ChatThreadPage() {
                             {message.sender.displayName}
                           </span>
                         )}
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (selectionMode) {
-                              toggleSelected(message.id);
-                              return;
-                            }
-                            setActiveMessageId((value) => (value === message.id ? null : message.id));
-                          }}
-                          className={`relative rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
-                            isMe
-                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                              : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
-                          } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-rose-400' : ''}`}
-                        >
+                        <div className={`flex items-start gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                          <button
+                            type="button"
+                            onPointerDown={() => {
+                              if (!selectionMode) startHoldAction(message.id);
+                            }}
+                            onPointerUp={clearHoldTimer}
+                            onPointerLeave={clearHoldTimer}
+                            onPointerCancel={clearHoldTimer}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              if (selectionMode) toggleSelected(message.id);
+                              else setActiveMessageId((value) => (value === message.id ? null : message.id));
+                            }}
+                            onClick={() => {
+                              if (selectionMode) toggleSelected(message.id);
+                            }}
+                            className={`relative rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
+                              isMe
+                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                                : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
+                            } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-rose-400' : ''}`}
+                          >
                           {selectionMode && (
                             <span className="absolute left-3 top-3 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
                               {selectedIds.includes(message.id) ? 'Selected' : 'Tap'}
@@ -1128,7 +1207,19 @@ export default function ChatThreadPage() {
                               <span>{ownMessageSeen ? 'Seen' : isLastOwnMessage ? 'Delivered' : 'Sent'}</span>
                             )}
                           </div>
-                        </button>
+                          </button>
+
+                          {!selectionMode && !message.deletedForEveryoneAt && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveMessageId((value) => (value === message.id ? null : message.id))}
+                              className="mt-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-slate-400 shadow-sm hover:text-slate-700 dark:bg-slate-900/70 dark:text-slate-500 dark:hover:text-slate-200"
+                              aria-label="Message options"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
 
                         {Object.keys(reactionCounts).length > 0 && (
                           <div className={`mt-1 flex flex-wrap gap-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
