@@ -1,11 +1,39 @@
 import { Router } from 'express';
+import fs from 'fs';
+import multer from 'multer';
+import path from 'path';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { isEmojiOnly } from '../util/emoji.js';
 import { getConversationBlockState, usersAreBlocked } from '../relationships.js';
+import {
+  broadcastConversationMessage,
+  chatMessageInclude,
+  createConversationMessage,
+  updateMessageReactions,
+} from '../chat.js';
 
 const router = Router();
+const UPLOADS_ROOT = process.env.UPLOADS_DIR || '/app/uploads';
+const VOICE_DIR = path.join(UPLOADS_ROOT, 'voice-notes');
+fs.mkdirSync(VOICE_DIR, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: VOICE_DIR,
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || '.webm').toLowerCase();
+      const safe = ['.webm', '.ogg', '.mp3', '.wav', '.m4a'].includes(ext) ? ext : '.webm';
+      cb(null, `${req.user.id}-${Date.now()}${safe}`);
+    },
+  }),
+  limits: { fileSize: 6 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^audio\//.test(file.mimetype)) return cb(new Error('invalid_audio_type'));
+    cb(null, true);
+  },
+});
 
 const authorSelect = {
   id: true,
@@ -13,6 +41,20 @@ const authorSelect = {
   displayName: true,
   profilePicture: true,
 };
+
+async function ensureConversationAccess(conversationId, userId) {
+  const member = await prisma.conversationMember.findUnique({
+    where: { conversationId_userId: { conversationId, userId } },
+  });
+  if (!member) return { ok: false, error: 'forbidden' };
+
+  const blockState = await getConversationBlockState(conversationId, userId);
+  if (blockState.blockedByMe || blockState.hasBlockedMe) {
+    return { ok: false, error: 'blocked' };
+  }
+
+  return { ok: true, member, blockState };
+}
 
 router.get('/', requireAuth, async (req, res) => {
   const memberships = await prisma.conversationMember.findMany({
@@ -197,38 +239,130 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     take: limit,
     skip: cursor ? 1 : 0,
     cursor,
-    include: { sender: { select: authorSelect } },
+    include: chatMessageInclude,
   });
   const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
   res.json({ messages: messages.reverse(), nextCursor });
 });
 
-const SendSchema = z.object({ body: z.string().min(1).max(500) });
+const SendSchema = z.object({
+  body: z.string().min(1).max(500),
+  replyToId: z.string().min(1).optional(),
+});
 
 router.post('/:id/messages', requireAuth, async (req, res) => {
   const parsed = SendSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
   if (!isEmojiOnly(parsed.data.body)) return res.status(400).json({ error: 'emoji_only' });
 
-  const member = await prisma.conversationMember.findUnique({
-    where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
-  });
-  if (!member) return res.status(403).json({ error: 'forbidden' });
-
-  const blockState = await getConversationBlockState(req.params.id, req.user.id);
-  if (blockState.blockedByMe || blockState.hasBlockedMe) {
-    return res.status(403).json({ error: 'blocked' });
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) {
+    return res.status(access.error === 'forbidden' ? 403 : 403).json({ error: access.error });
   }
 
-  const message = await prisma.message.create({
-    data: {
-      conversationId: req.params.id,
-      senderId: req.user.id,
-      body: parsed.data.body,
-    },
-    include: { sender: { select: authorSelect } },
+  const message = await createConversationMessage({
+    conversationId: req.params.id,
+    senderId: req.user.id,
+    body: parsed.data.body,
+    replyToId: parsed.data.replyToId || null,
   });
+  await broadcastConversationMessage(message);
   res.status(201).json({ message });
+});
+
+router.post('/:id/voice', requireAuth, upload.single('audio'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no_file' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const message = await createConversationMessage({
+    conversationId: req.params.id,
+    senderId: req.user.id,
+    audioUrl: `/uploads/voice-notes/${req.file.filename}`,
+    replyToId: typeof req.body.replyToId === 'string' && req.body.replyToId ? req.body.replyToId : null,
+  });
+  await broadcastConversationMessage(message);
+  res.status(201).json({ message });
+});
+
+const ReactionSchema = z.object({ emoji: z.string().min(1).max(16) });
+
+router.post('/:id/messages/:messageId/reaction', requireAuth, async (req, res) => {
+  const parsed = ReactionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.conversationId !== req.params.id) return res.status(404).json({ error: 'not_found' });
+
+  const existing = await prisma.messageReaction.findUnique({
+    where: {
+      messageId_userId: {
+        messageId: req.params.messageId,
+        userId: req.user.id,
+      },
+    },
+  });
+
+  if (existing?.emoji === parsed.data.emoji) {
+    await prisma.messageReaction.delete({ where: { messageId_userId: { messageId: req.params.messageId, userId: req.user.id } } });
+  } else if (existing) {
+    await prisma.messageReaction.update({
+      where: { messageId_userId: { messageId: req.params.messageId, userId: req.user.id } },
+      data: { emoji: parsed.data.emoji },
+    });
+  } else {
+    await prisma.messageReaction.create({
+      data: {
+        messageId: req.params.messageId,
+        userId: req.user.id,
+        emoji: parsed.data.emoji,
+      },
+    });
+  }
+
+  const updated = await updateMessageReactions(req.params.messageId);
+  res.json({ reactions: updated?.reactions || [] });
+});
+
+const ForwardSchema = z.object({ messageId: z.string().min(1) });
+
+router.post('/:id/forward', requireAuth, async (req, res) => {
+  const parsed = ForwardSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const sourceMessage = await prisma.message.findUnique({
+    where: { id: parsed.data.messageId },
+    include: chatMessageInclude,
+  });
+  if (!sourceMessage) return res.status(404).json({ error: 'not_found' });
+
+  const sourceMembership = await prisma.conversationMember.findUnique({
+    where: {
+      conversationId_userId: {
+        conversationId: sourceMessage.conversationId,
+        userId: req.user.id,
+      },
+    },
+  });
+  if (!sourceMembership) return res.status(403).json({ error: 'forbidden' });
+
+  const forwarded = await createConversationMessage({
+    conversationId: req.params.id,
+    senderId: req.user.id,
+    body: sourceMessage.body,
+    audioUrl: sourceMessage.audioUrl,
+    forwardedFromMessageId: sourceMessage.id,
+  });
+
+  await broadcastConversationMessage(forwarded);
+  res.status(201).json({ message: forwarded });
 });
 
 router.post('/:id/read', requireAuth, async (req, res) => {

@@ -12,13 +12,19 @@ import Loader from '@/components/Loader';
 type ConvT = {
   id: string;
   other: { id: string; handle: string; displayName: string; profilePicture: string | null };
-  lastMessage: { body: string; createdAt: string } | null;
+  lastMessage: { body: string; audioUrl?: string | null; createdAt: string } | null;
   lastReadAt: string | null;
   otherLastReadAt: string | null;
   pushMuted: boolean;
   wallpaper: 'aurora' | 'midnight' | 'sunset' | 'mint' | 'graphite';
   unreadCount: number;
 };
+
+function chatPreview(conversation: ConvT) {
+  if (!conversation.lastMessage) return 'No messages yet';
+  if (conversation.lastMessage.audioUrl) return 'Voice note';
+  return conversation.lastMessage.body || 'Message';
+}
 
 import { motion } from 'framer-motion';
 
@@ -85,7 +91,7 @@ export default function ChatListPage() {
                     {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
                   </div>
                   <div className="truncate text-[14px] font-medium text-slate-500">
-                    {c.lastMessage?.body || 'No messages yet'}
+                    {chatPreview(c)}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

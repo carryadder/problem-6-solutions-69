@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Socket } from 'socket.io-client';
 import { useSession } from 'next-auth/react';
-import { api, apiJson } from '@/lib/api';
+import { api, apiJson, apiUpload } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { avatarFor } from '@/lib/avatar';
 import EmojiPicker from '@/components/EmojiPicker';
@@ -13,16 +13,40 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
+  Forward,
   MessageSquare,
+  Mic,
+  MicOff,
   Palette,
+  Reply,
+  Send,
   ShieldAlert,
   ShieldBan,
   Smile,
   Flag,
+  X,
 } from 'lucide-react';
 
 type Sender = { id: string; handle: string; displayName: string; profilePicture: string | null };
-type MessageT = { id: string; conversationId: string; senderId: string; body: string; createdAt: string; sender: Sender };
+type MessageReaction = { userId: string; emoji: string; createdAt: string };
+type MessagePreview = {
+  id: string;
+  body: string;
+  audioUrl: string | null;
+  sender: Sender;
+};
+type MessageT = {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  body: string;
+  audioUrl: string | null;
+  createdAt: string;
+  sender: Sender;
+  replyTo: MessagePreview | null;
+  forwardedFromMessage: MessagePreview | null;
+  reactions: MessageReaction[];
+};
 type WallpaperId = 'aurora' | 'midnight' | 'sunset' | 'mint' | 'graphite';
 type ConversationT = {
   id: string;
@@ -33,6 +57,11 @@ type ConversationT = {
   wallpaper: WallpaperId;
   blockedByMe: boolean;
   hasBlockedMe: boolean;
+};
+type ConversationListItem = {
+  id: string;
+  other: Sender;
+  lastMessage: { body: string; audioUrl?: string | null } | null;
 };
 
 const WALLPAPERS: Array<{
@@ -80,6 +109,7 @@ const WALLPAPERS: Array<{
 ];
 
 const REPORT_REASONS = ['Spam', 'Harassment', 'Impersonation', 'Abuse', 'Other'];
+const REACTION_EMOJI = ['❤️', '😂', '😮', '😢', '🙏', '🔥'];
 
 function formatDay(iso: string) {
   return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -96,6 +126,18 @@ function statusLabel(conversation: ConversationT | null, typingName: string | nu
   if (typingName) return `${typingName} is typing...`;
   if (conversation.pushMuted) return 'Push notifications muted';
   return 'Private end-to-end vibe';
+}
+
+function messageSnippet(message: MessagePreview | null) {
+  if (!message) return '';
+  if (message.audioUrl) return 'Voice note';
+  return message.body || 'Message';
+}
+
+function chatPreview(item: ConversationListItem) {
+  if (!item.lastMessage) return 'No messages yet';
+  if (item.lastMessage.audioUrl) return 'Voice note';
+  return item.lastMessage.body || 'Message';
 }
 
 export default function ChatThreadPage() {
@@ -119,10 +161,22 @@ export default function ChatThreadPage() {
   const [reportBusy, setReportBusy] = useState(false);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [blockBusy, setBlockBusy] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<MessageT | null>(null);
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [forwardSource, setForwardSource] = useState<MessageT | null>(null);
+  const [forwardTargets, setForwardTargets] = useState<ConversationListItem[]>([]);
+  const [forwardBusy, setForwardBusy] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedTypingRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const meId = (session as any)?.userId;
 
   const wallpaper = WALLPAPERS.find((item) => item.id === conversation?.wallpaper) || WALLPAPERS[0];
@@ -176,6 +230,7 @@ export default function ChatThreadPage() {
     let onTypingStart: ((payload: { displayName?: string }) => void) | null = null;
     let onTypingStop: (() => void) | null = null;
     let onReadUpdate: ((payload: { userId: string; at: string }) => void) | null = null;
+    let onReactionUpdate: ((payload: { messageId: string; reactions: MessageReaction[] }) => void) | null = null;
 
     getSocket()
       .then((socket) => {
@@ -201,11 +256,15 @@ export default function ChatThreadPage() {
           setConversation((prev) => (prev ? { ...prev, otherLastReadAt: at } : prev));
         };
 
+        onReactionUpdate = ({ messageId, reactions }: { messageId: string; reactions: MessageReaction[] }) => {
+          setMessages((prev) =>
+            prev.map((message) => (message.id === messageId ? { ...message, reactions } : message)),
+          );
+        };
+
         socket.emit('conversation:join', params.id, (ack: { ok?: boolean; error?: string }) => {
           if (!ack?.ok && ack?.error === 'blocked') {
-            setConversation((prev) =>
-              prev ? { ...prev, hasBlockedMe: true } : prev,
-            );
+            setConversation((prev) => (prev ? { ...prev, hasBlockedMe: true } : prev));
             setError('This conversation is unavailable because one of you is blocked.');
           }
         });
@@ -214,6 +273,7 @@ export default function ChatThreadPage() {
         socket.on('typing:start', onTypingStart);
         socket.on('typing:stop', onTypingStop);
         socket.on('read:update', onReadUpdate);
+        socket.on('message:reaction:update', onReactionUpdate);
       })
       .catch(() => {
         setError('Realtime chat is unavailable right now.');
@@ -231,6 +291,7 @@ export default function ChatThreadPage() {
         if (onTypingStart) activeSocket.off('typing:start', onTypingStart);
         if (onTypingStop) activeSocket.off('typing:stop', onTypingStop);
         if (onReadUpdate) activeSocket.off('read:update', onReadUpdate);
+        if (onReactionUpdate) activeSocket.off('message:reaction:update', onReactionUpdate);
       }
     };
   }, [meId, params.id, status]);
@@ -266,6 +327,22 @@ export default function ChatThreadPage() {
     }, 1500);
   }, [conversation?.blockedByMe, conversation?.hasBlockedMe, draft, params.id]);
 
+  useEffect(() => {
+    if (!forwardSource || forwardTargets.length > 0) return;
+    api<{ conversations: ConversationListItem[] }>('/api/conversations')
+      .then((response) => setForwardTargets(response.conversations.filter((item) => item.id !== params.id)))
+      .catch(() => setForwardTargets([]));
+  }, [forwardSource, forwardTargets.length, params.id]);
+
+  function stopLocalRecording() {
+    mediaRecorderRef.current?.stop();
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+  }
+
   async function send() {
     const body = draft.trim();
     if (!body || sending || conversation?.blockedByMe || conversation?.hasBlockedMe) return;
@@ -276,19 +353,28 @@ export default function ChatThreadPage() {
     startedTypingRef.current = false;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
 
-    socketRef.current?.emit('message:send', { conversationId: params.id, body }, (ack: any) => {
-      setSending(false);
-      if (!ack?.ok) {
-        if (ack?.error === 'emoji_only') setError('Only emoji are allowed in chat.');
-        else if (ack?.error === 'rate_limited') setError('Slow down a bit.');
-        else if (ack?.error === 'blocked') setError('You cannot message this person because one of you is blocked.');
-        else setError('Could not send.');
-        return;
-      }
+    socketRef.current?.emit(
+      'message:send',
+      {
+        conversationId: params.id,
+        body,
+        replyToId: replyTarget?.id || undefined,
+      },
+      (ack: any) => {
+        setSending(false);
+        if (!ack?.ok) {
+          if (ack?.error === 'emoji_only') setError('Only emoji are allowed in chat.');
+          else if (ack?.error === 'rate_limited') setError('Slow down a bit.');
+          else if (ack?.error === 'blocked') setError('You cannot message this person because one of you is blocked.');
+          else setError('Could not send.');
+          return;
+        }
 
-      setDraft('');
-      setTypingName(null);
-    });
+        setDraft('');
+        setTypingName(null);
+        setReplyTarget(null);
+      },
+    );
   }
 
   async function toggleMute() {
@@ -368,6 +454,76 @@ export default function ChatThreadPage() {
       setReportMessage('Could not submit report.');
     } finally {
       setReportBusy(false);
+    }
+  }
+
+  async function toggleReaction(messageId: string, emoji: string) {
+    try {
+      const res = await apiJson<{ reactions: MessageReaction[] }>(
+        `/api/conversations/${params.id}/messages/${messageId}/reaction`,
+        { emoji },
+      );
+      setMessages((prev) => prev.map((message) => (message.id === messageId ? { ...message, reactions: res.reactions } : message)));
+    } catch {
+      setError('Could not update reaction.');
+    }
+  }
+
+  async function startRecording() {
+    if (isRecording || voiceBusy || composerDisabled) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Voice notes are not supported in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size === 0) return;
+        setVoiceBusy(true);
+        setError(null);
+        try {
+          const form = new FormData();
+          form.append('audio', blob, 'voice-note.webm');
+          if (replyTarget) form.append('replyToId', replyTarget.id);
+          await apiUpload(`/api/conversations/${params.id}/voice`, form);
+          setReplyTarget(null);
+        } catch {
+          setError('Could not send voice note.');
+        } finally {
+          setVoiceBusy(false);
+        }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      recordingStreamRef.current = stream;
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((value) => value + 1);
+      }, 1000);
+    } catch {
+      setError('Microphone access was denied.');
+    }
+  }
+
+  async function forwardMessage(targetConversationId: string) {
+    if (!forwardSource || forwardBusy) return;
+    setForwardBusy(true);
+    try {
+      await apiJson(`/api/conversations/${targetConversationId}/forward`, { messageId: forwardSource.id });
+      setForwardSource(null);
+      setForwardTargets([]);
+    } catch {
+      setError('Could not forward message.');
+    } finally {
+      setForwardBusy(false);
     }
   }
 
@@ -531,6 +687,10 @@ export default function ChatThreadPage() {
               const endsGroup = !next || next.sender.id !== message.sender.id;
               const showDay = !previous || formatDay(previous.createdAt) !== formatDay(message.createdAt);
               const isLastOwnMessage = lastOwnMessage?.id === message.id;
+              const reactionCounts = message.reactions.reduce<Record<string, number>>((acc, reaction) => {
+                acc[reaction.emoji] = (acc[reaction.emoji] || 0) + 1;
+                return acc;
+              }, {});
 
               return (
                 <div key={message.id} className="space-y-2">
@@ -563,21 +723,91 @@ export default function ChatThreadPage() {
                           </span>
                         )}
 
-                        <div
-                          className={`rounded-[24px] px-4 py-3 text-[15px] leading-relaxed shadow-sm ${
+                        <button
+                          type="button"
+                          onClick={() => setActiveMessageId((value) => (value === message.id ? null : message.id))}
+                          className={`rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
                             isMe
                               ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                               : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
                           } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'}`}
                         >
-                          <div>{message.body}</div>
+                          {message.forwardedFromMessage && (
+                            <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/20 bg-white/10 text-white/80 dark:border-slate-300/30 dark:bg-slate-900/10 dark:text-slate-600' : 'border-slate-200/80 bg-slate-100/70 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300'}`}>
+                              Forwarded from {message.forwardedFromMessage.sender.displayName}
+                            </div>
+                          )}
+                          {message.replyTo && (
+                            <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/20 bg-white/10 text-white/80 dark:border-slate-300/30 dark:bg-slate-900/10 dark:text-slate-600' : 'border-slate-200/80 bg-slate-100/70 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300'}`}>
+                              <div className="font-semibold">Replying to {message.replyTo.sender.displayName}</div>
+                              <div className="truncate">{messageSnippet(message.replyTo)}</div>
+                            </div>
+                          )}
+                          {message.body && <div>{message.body}</div>}
+                          {message.audioUrl && (
+                            <audio controls className="mt-1 w-full max-w-[260px]">
+                              <source src={message.audioUrl} />
+                            </audio>
+                          )}
                           <div className={`mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${isMe ? 'justify-end text-white/60 dark:text-slate-500' : 'justify-start text-slate-500 dark:text-slate-400'}`}>
                             <span>{formatTime(message.createdAt)}</span>
                             {isMe && isLastOwnMessage && (
                               <span>{otherSeenLatestOwnMessage ? 'Seen' : 'Delivered'}</span>
                             )}
                           </div>
-                        </div>
+                        </button>
+
+                        {Object.keys(reactionCounts).length > 0 && (
+                          <div className={`mt-1 flex flex-wrap gap-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            {Object.entries(reactionCounts).map(([emoji, count]) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => void toggleReaction(message.id, emoji)}
+                                className="rounded-full bg-white/80 px-2 py-1 text-xs shadow-sm dark:bg-slate-900/70"
+                              >
+                                {emoji} {count}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {activeMessageId === message.id && !composerDisabled && (
+                          <div className={`mt-2 flex flex-wrap gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            <div className="flex rounded-full bg-white/80 p-1 shadow-sm dark:bg-slate-900/75">
+                              {REACTION_EMOJI.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => void toggleReaction(message.id, emoji)}
+                                  className="rounded-full px-2 py-1 text-base hover:bg-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReplyTarget(message);
+                                setActiveMessageId(null);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"
+                            >
+                              <Reply className="h-3.5 w-3.5" /> Reply
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForwardSource(message);
+                                setActiveMessageId(null);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"
+                            >
+                              <Forward className="h-3.5 w-3.5" /> Forward
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -607,11 +837,35 @@ export default function ChatThreadPage() {
         )}
 
         <div className="rounded-[28px] border border-white/60 bg-white/78 p-2 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/72">
+          {replyTarget && (
+            <div className="mb-2 flex items-start justify-between rounded-2xl bg-slate-100/80 px-4 py-3 text-sm dark:bg-slate-900/80">
+              <div>
+                <div className="font-semibold text-slate-700 dark:text-slate-200">Replying to {replyTarget.sender.displayName}</div>
+                <div className="text-slate-500 dark:text-slate-400">{messageSnippet(replyTarget)}</div>
+              </div>
+              <button type="button" onClick={() => setReplyTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {composerDisabled && (
             <div className="mb-2 rounded-2xl bg-slate-100/80 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900/80 dark:text-slate-300">
               {conversation?.blockedByMe
                 ? 'You blocked this contact. Unblock them to start chatting again.'
                 : 'This contact blocked you. You can still view the thread, but sending is disabled.'}
+            </div>
+          )}
+
+          {isRecording && (
+            <div className="mb-2 flex items-center justify-between rounded-2xl bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                Recording voice note {recordingSeconds}s
+              </div>
+              <button type="button" onClick={stopLocalRecording} className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white">
+                <MicOff className="h-3.5 w-3.5" /> Stop
+              </button>
             </div>
           )}
 
@@ -631,6 +885,16 @@ export default function ChatThreadPage() {
                 </div>
               )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => void startRecording()}
+              disabled={voiceBusy || composerDisabled || isRecording}
+              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              aria-label="Record voice note"
+            >
+              <Mic className="h-5 w-5" />
+            </button>
 
             <div className="flex-1 rounded-[26px] bg-slate-100/80 px-4 py-2 dark:bg-slate-800/80">
               <textarea
@@ -653,13 +917,63 @@ export default function ChatThreadPage() {
               type="button"
               onClick={() => void send()}
               disabled={!draft.trim() || sending || composerDisabled}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"
+              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"
             >
-              <span>{sending ? 'Sending...' : 'Send'}</span>
+              <Send className="h-4 w-4" />
             </button>
           </div>
         </div>
       </div>
+
+      {forwardSource && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[28px] border border-white/20 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-lg font-bold text-slate-900 dark:text-white">Forward message</div>
+                <div className="text-sm text-slate-500 dark:text-slate-400">Pick a chat to forward this message.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setForwardSource(null);
+                  setForwardTargets([]);
+                }}
+                className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-2xl bg-slate-100/80 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
+              {messageSnippet(forwardSource)}
+            </div>
+
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {forwardTargets.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => void forwardMessage(item.id)}
+                  disabled={forwardBusy}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-slate-200/70 px-3 py-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/70"
+                >
+                  <img src={avatarFor(item.other)} alt="" className="h-11 w-11 rounded-2xl object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-slate-900 dark:text-white">{item.other.displayName}</div>
+                    <div className="truncate text-sm text-slate-500 dark:text-slate-400">{chatPreview(item)}</div>
+                  </div>
+                </button>
+              ))}
+              {forwardTargets.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700">
+                  No other conversations yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

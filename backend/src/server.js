@@ -102,6 +102,9 @@ app.use((err, _req, res, _next) => {
   if (err?.message === 'invalid_image_type') {
     return res.status(400).json({ error: 'invalid_image_type' });
   }
+  if (err?.message === 'invalid_audio_type') {
+    return res.status(400).json({ error: 'invalid_audio_type' });
+  }
   if (err?.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ error: 'file_too_large' });
   }
