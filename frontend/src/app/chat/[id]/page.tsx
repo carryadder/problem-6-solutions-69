@@ -16,6 +16,7 @@ import {
   CheckSquare2,
   Forward,
   ImageIcon,
+  ImagePlus,
   MessageSquare,
   Mic,
   MicOff,
@@ -40,6 +41,7 @@ type MessagePreview = {
   id: string;
   body: string;
   audioUrl: string | null;
+  imageUrl: string | null;
   editedAt: string | null;
   deletedForEveryoneAt: string | null;
   sender: Sender;
@@ -50,6 +52,7 @@ type MessageT = {
   senderId: string;
   body: string;
   audioUrl: string | null;
+  imageUrl: string | null;
   editedAt: string | null;
   deletedForEveryoneAt: string | null;
   createdAt: string;
@@ -74,7 +77,7 @@ type ConversationT = {
 type ConversationListItem = {
   id: string;
   other: Sender;
-  lastMessage: { body: string; audioUrl?: string | null } | null;
+  lastMessage: { body: string; audioUrl?: string | null; imageUrl?: string | null } | null;
 };
 
 const WALLPAPERS: Array<{
@@ -144,12 +147,14 @@ function statusLabel(conversation: ConversationT | null, typingName: string | nu
 function messageSnippet(message: MessagePreview | MessageT | null) {
   if (!message) return '';
   if (message.deletedForEveryoneAt) return 'Deleted message';
+  if (message.imageUrl) return 'Photo';
   if (message.audioUrl) return 'Voice note';
   return message.body || 'Message';
 }
 
 function chatPreview(item: ConversationListItem) {
   if (!item.lastMessage) return 'No messages yet';
+  if (item.lastMessage.imageUrl) return 'Photo';
   if (item.lastMessage.audioUrl) return 'Voice note';
   return item.lastMessage.body || 'Message';
 }
@@ -203,6 +208,7 @@ export default function ChatThreadPage() {
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const meId = (session as any)?.userId;
 
   const wallpaper = WALLPAPERS.find((item) => item.id === conversation?.wallpaper) || WALLPAPERS[0];
@@ -211,12 +217,6 @@ export default function ChatThreadPage() {
     const ownMessages = messages.filter((message) => message.senderId === meId);
     return ownMessages[ownMessages.length - 1] || null;
   }, [meId, messages]);
-
-  const otherSeenLatestOwnMessage = Boolean(
-    lastOwnMessage &&
-      conversation?.otherLastReadAt &&
-      new Date(conversation.otherLastReadAt).getTime() >= new Date(lastOwnMessage.createdAt).getTime(),
-  );
 
   const composerDisabled = Boolean(conversation?.blockedByMe || conversation?.hasBlockedMe);
 
@@ -482,9 +482,8 @@ export default function ChatThreadPage() {
         setMessages((prev) => prev.map((message) => (message.id === editTarget.id ? res.message : message)));
         setDraft('');
         setEditTarget(null);
-      } catch (editError: any) {
-        if ((editError.message || '').includes('emoji_only')) setError('Only emoji are allowed in chat.');
-        else setError('Could not edit message.');
+      } catch {
+        setError('Could not edit message.');
       } finally {
         setSending(false);
       }
@@ -505,8 +504,7 @@ export default function ChatThreadPage() {
       (ack: any) => {
         setSending(false);
         if (!ack?.ok) {
-          if (ack?.error === 'emoji_only') setError('Only emoji are allowed in chat.');
-          else if (ack?.error === 'rate_limited') setError('Slow down a bit.');
+          if (ack?.error === 'rate_limited') setError('Slow down a bit.');
           else if (ack?.error === 'blocked') setError('You cannot message this person because one of you is blocked.');
           else setError('Could not send.');
           return;
@@ -663,13 +661,14 @@ export default function ChatThreadPage() {
         setMessages((prev) =>
           prev.map((item) =>
             item.id === message.id
-              ? {
-                  ...item,
-                  body: '',
-                  audioUrl: null,
-                  replyTo: null,
-                  forwardedFromMessage: null,
-                  deletedForEveryoneAt: new Date().toISOString(),
+                ? {
+                    ...item,
+                    body: '',
+                    audioUrl: null,
+                    imageUrl: null,
+                    replyTo: null,
+                    forwardedFromMessage: null,
+                    deletedForEveryoneAt: new Date().toISOString(),
                   reactions: [],
                 }
               : item,
@@ -681,6 +680,24 @@ export default function ChatThreadPage() {
       }
     } catch {
       setError('Could not delete message.');
+    }
+  }
+
+  async function sendImage(file: File) {
+    if (composerDisabled || voiceBusy) return;
+    setVoiceBusy(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      if (replyTarget) form.append('replyToId', replyTarget.id);
+      await apiUpload(`/api/conversations/${params.id}/image`, form);
+      setReplyTarget(null);
+    } catch {
+      setError('Could not send image.');
+    } finally {
+      setVoiceBusy(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
     }
   }
 
@@ -1008,6 +1025,11 @@ export default function ChatThreadPage() {
               const endsGroup = !next || next.sender.id !== message.sender.id;
               const showDay = !previous || formatDay(previous.createdAt) !== formatDay(message.createdAt);
               const isLastOwnMessage = lastOwnMessage?.id === message.id;
+              const ownMessageSeen = Boolean(
+                isMe &&
+                  conversation?.otherLastReadAt &&
+                  new Date(conversation.otherLastReadAt).getTime() >= new Date(message.createdAt).getTime(),
+              );
               const reactionCounts = message.reactions.reduce<Record<string, number>>((acc, reaction) => {
                 acc[reaction.emoji] = (acc[reaction.emoji] || 0) + 1;
                 return acc;
@@ -1084,6 +1106,13 @@ export default function ChatThreadPage() {
                             <div className="italic opacity-70">Message deleted</div>
                           ) : (
                             <>
+                              {message.imageUrl && (
+                                <img
+                                  src={message.imageUrl}
+                                  alt="Shared in chat"
+                                  className="mb-2 max-h-80 w-full rounded-2xl object-cover"
+                                />
+                              )}
                               {message.body && <div>{message.body}</div>}
                               {message.audioUrl && (
                                 <audio controls className="mt-1 w-full max-w-[260px]">
@@ -1095,8 +1124,8 @@ export default function ChatThreadPage() {
                           <div className={`mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${isMe ? 'justify-end text-white/60 dark:text-slate-500' : 'justify-start text-slate-500 dark:text-slate-400'}`}>
                             <span>{formatTime(message.createdAt)}</span>
                             {message.editedAt && <span>Edited</span>}
-                            {isMe && isLastOwnMessage && (
-                              <span>{otherSeenLatestOwnMessage ? 'Seen' : 'Delivered'}</span>
+                            {isMe && (
+                              <span>{ownMessageSeen ? 'Seen' : isLastOwnMessage ? 'Delivered' : 'Sent'}</span>
                             )}
                           </div>
                         </button>
@@ -1219,6 +1248,20 @@ export default function ChatThreadPage() {
               )}
             </div>
 
+            <div>
+              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Send image"><ImagePlus className="h-5 w-5" /></button>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void sendImage(file);
+                }}
+              />
+            </div>
+
             <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Record voice note"><Mic className="h-5 w-5" /></button>
 
             <div className="flex-1 rounded-[26px] bg-slate-100/80 px-4 py-2 dark:bg-slate-800/80">
@@ -1231,7 +1274,7 @@ export default function ChatThreadPage() {
                     void send();
                   }
                 }}
-                placeholder={composerDisabled ? 'Messaging unavailable' : 'Send a mood in emoji only…'}
+                placeholder={composerDisabled ? 'Messaging unavailable' : 'Type a message…'}
                 rows={1}
                 disabled={composerDisabled}
                 className="max-h-32 min-h-[28px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-100"
@@ -1270,7 +1313,9 @@ export default function ChatThreadPage() {
                       <div className="text-xs text-slate-500">{formatDay(item.createdAt)} at {formatTime(item.createdAt)}</div>
                     </div>
                   </div>
-                  {item.audioUrl ? (
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt="Shared in chat" className="max-h-[28rem] w-full rounded-2xl object-cover" />
+                  ) : item.audioUrl ? (
                     <audio controls className="w-full">
                       <source src={item.audioUrl} />
                     </audio>

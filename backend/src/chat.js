@@ -7,7 +7,6 @@ import { prisma } from './db.js';
 import { redis, subRedis } from './redis.js';
 import { sendPushNotification } from './push.js';
 import { getConversationBlockState } from './relationships.js';
-import { isEmojiOnly } from './util/emoji.js';
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || 'dev-secret';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
@@ -27,6 +26,7 @@ export const chatMessageInclude = {
       id: true,
       body: true,
       audioUrl: true,
+      imageUrl: true,
       editedAt: true,
       deletedForEveryoneAt: true,
       sender: { select: authorSelect },
@@ -37,6 +37,7 @@ export const chatMessageInclude = {
       id: true,
       body: true,
       audioUrl: true,
+      imageUrl: true,
       editedAt: true,
       deletedForEveryoneAt: true,
       sender: { select: authorSelect },
@@ -52,6 +53,7 @@ export const chatMessageInclude = {
 };
 
 function messagePreview(message) {
+  if (message.imageUrl) return 'Photo';
   if (message.audioUrl) return 'Voice note';
   if (message.body) return message.body;
   return 'New message';
@@ -79,6 +81,7 @@ export async function createConversationMessage({
   senderId,
   body = '',
   audioUrl = null,
+  imageUrl = null,
   replyToId = null,
   forwardedFromMessageId = null,
 }) {
@@ -88,6 +91,7 @@ export async function createConversationMessage({
       senderId,
       body,
       audioUrl,
+      imageUrl,
       replyToId,
       forwardedFromMessageId,
     },
@@ -197,9 +201,6 @@ export function attachChat(httpServer) {
       }
       if (!body.trim()) {
         return ack?.({ ok: false, error: 'invalid_body' });
-      }
-      if (!isEmojiOnly(body)) {
-        return ack?.({ ok: false, error: 'emoji_only' });
       }
 
       const member = await prisma.conversationMember.findUnique({

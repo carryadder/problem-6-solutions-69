@@ -5,7 +5,6 @@ import path from 'path';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { isEmojiOnly } from '../util/emoji.js';
 import { getConversationBlockState, usersAreBlocked } from '../relationships.js';
 import {
   broadcastConversationMessage,
@@ -19,7 +18,9 @@ import {
 const router = Router();
 const UPLOADS_ROOT = process.env.UPLOADS_DIR || '/app/uploads';
 const VOICE_DIR = path.join(UPLOADS_ROOT, 'voice-notes');
+const CHAT_IMAGE_DIR = path.join(UPLOADS_ROOT, 'chat-images');
 fs.mkdirSync(VOICE_DIR, { recursive: true });
+fs.mkdirSync(CHAT_IMAGE_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -33,6 +34,22 @@ const upload = multer({
   limits: { fileSize: 6 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!/^audio\//.test(file.mimetype)) return cb(new Error('invalid_audio_type'));
+    cb(null, true);
+  },
+});
+
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: CHAT_IMAGE_DIR,
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
+      const safe = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext) ? ext : '.jpg';
+      cb(null, `${req.user.id}-${Date.now()}${safe}`);
+    },
+  }),
+  limits: { fileSize: 6 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) return cb(new Error('invalid_image_type'));
     cb(null, true);
   },
 });
@@ -108,17 +125,24 @@ router.get('/', requireAuth, async (req, res) => {
       otherLastReadAt: otherMember?.lastReadAt || null,
       pushMuted: m.pushMuted,
       wallpaper: m.wallpaper,
+      archivedAt: m.archivedAt,
+      folder: m.folder,
       pinnedMessage: m.conversation.pinnedMessage,
-      unreadCount:
-        m.lastReadAt
-          ? m.conversation.messages.filter(
-              (message) =>
-                message.senderId !== req.user.id &&
-                new Date(message.createdAt).getTime() > new Date(m.lastReadAt).getTime(),
-            ).length
-          : m.conversation.messages.filter((message) => message.senderId !== req.user.id).length,
+      unreadCount: 0,
     };
   });
+
+  await Promise.all(
+    convs.map(async (conversation) => {
+      conversation.unreadCount = await prisma.message.count({
+        where: {
+          conversationId: conversation.id,
+          senderId: { not: req.user.id },
+          ...(conversation.lastReadAt ? { createdAt: { gt: new Date(conversation.lastReadAt) } } : {}),
+        },
+      });
+    }),
+  );
 
   // Sort by most recent message
   convs.sort((a, b) => {
@@ -190,6 +214,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       otherLastReadAt: otherMember?.lastReadAt || null,
       pushMuted: member.pushMuted,
       wallpaper: member.wallpaper,
+      archivedAt: member.archivedAt,
+      folder: member.folder,
       pinnedMessage: member.conversation.pinnedMessage,
       blockedByMe: blockState.blockedByMe,
       hasBlockedMe: blockState.hasBlockedMe,
@@ -200,6 +226,8 @@ router.get('/:id', requireAuth, async (req, res) => {
 const PreferencesSchema = z.object({
   pushMuted: z.boolean().optional(),
   wallpaper: z.enum(['aurora', 'midnight', 'sunset', 'mint', 'graphite']).optional(),
+  archived: z.boolean().optional(),
+  folder: z.enum(['inbox', 'friends', 'work', 'saved']).optional(),
 });
 
 router.patch('/:id/preferences', requireAuth, async (req, res) => {
@@ -208,8 +236,18 @@ router.patch('/:id/preferences', requireAuth, async (req, res) => {
 
   const member = await prisma.conversationMember.update({
     where: { conversationId_userId: { conversationId: req.params.id, userId: req.user.id } },
-    data: parsed.data,
-    select: { pushMuted: true, wallpaper: true },
+    data: {
+      pushMuted: parsed.data.pushMuted,
+      wallpaper: parsed.data.wallpaper,
+      folder: parsed.data.folder,
+      archivedAt:
+        parsed.data.archived === undefined
+          ? undefined
+          : parsed.data.archived
+            ? new Date()
+            : null,
+    },
+    select: { pushMuted: true, wallpaper: true, archivedAt: true, folder: true },
   }).catch(() => null);
 
   if (!member) return res.status(403).json({ error: 'forbidden' });
@@ -310,6 +348,22 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
   res.json({ messages: decorated, nextCursor });
 });
 
+router.post('/:id/image', requireAuth, imageUpload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no_file' });
+
+  const access = await ensureConversationAccess(req.params.id, req.user.id);
+  if (!access.ok) return res.status(403).json({ error: access.error });
+
+  const message = await createConversationMessage({
+    conversationId: req.params.id,
+    senderId: req.user.id,
+    imageUrl: `/uploads/chat-images/${req.file.filename}`,
+    replyToId: typeof req.body.replyToId === 'string' && req.body.replyToId ? req.body.replyToId : null,
+  });
+  await broadcastConversationMessage(message);
+  res.status(201).json({ message: await decorateMessageForUser(message, req.user.id) });
+});
+
 router.get('/:id/search', requireAuth, async (req, res) => {
   const access = await ensureConversationAccess(req.params.id, req.user.id);
   if (!access.ok) return res.status(403).json({ error: access.error });
@@ -342,7 +396,6 @@ const SendSchema = z.object({
 router.post('/:id/messages', requireAuth, async (req, res) => {
   const parsed = SendSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
-  if (!isEmojiOnly(parsed.data.body)) return res.status(400).json({ error: 'emoji_only' });
 
   const access = await ensureConversationAccess(req.params.id, req.user.id);
   if (!access.ok) {
@@ -384,7 +437,6 @@ const EditSchema = z.object({
 router.patch('/:id/messages/:messageId', requireAuth, async (req, res) => {
   const parsed = EditSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body' });
-  if (!isEmojiOnly(parsed.data.body)) return res.status(400).json({ error: 'emoji_only' });
 
   const access = await ensureConversationAccess(req.params.id, req.user.id);
   if (!access.ok) return res.status(403).json({ error: access.error });
@@ -583,7 +635,7 @@ router.get('/:id/media', requireAuth, async (req, res) => {
       conversationId: req.params.id,
       hiddenBy: { none: { userId: req.user.id } },
       deletedForEveryoneAt: null,
-      OR: [{ audioUrl: { not: null } }],
+      OR: [{ audioUrl: { not: null } }, { imageUrl: { not: null } }],
     },
     orderBy: { createdAt: 'desc' },
     take: 100,
