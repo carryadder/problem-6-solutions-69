@@ -29,6 +29,15 @@ function chatPreview(conversation: ConvT) {
   return conversation.lastMessage.body || 'Message';
 }
 
+function formatRelative(iso: string | null | undefined) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  const diffHours = (Date.now() - date.getTime()) / 36e5;
+  if (diffHours < 24) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (diffHours < 24 * 7) return date.toLocaleDateString([], { weekday: 'short' });
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 const FOLDERS: Array<{ id: ConvT['folder']; label: string; icon: typeof Users }> = [
   { id: 'inbox', label: 'Inbox', icon: MessageCircle },
   { id: 'friends', label: 'Friends', icon: Users },
@@ -104,36 +113,47 @@ export default function ChatListPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <motion.div 
         initial={{ opacity: 0, x: -10 }}
         animate={{ opacity: 1, x: 0 }}
-        className="flex items-center gap-3"
+        className="flex items-end justify-between gap-3"
       >
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
-          <MessageCircle className="h-5 w-5" />
+        <div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-[0.32em] text-slate-400 dark:text-slate-500">Instagram-inspired</div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-[18px] bg-gradient-to-br from-fuchsia-500 via-rose-500 to-orange-400 text-white shadow-lg shadow-rose-500/30">
+              <MessageCircle className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Messages</h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Glide between your conversations.</p>
+            </div>
+          </div>
         </div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Chats</h1>
+        <div className="hidden rounded-full border border-slate-200/80 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur dark:border-slate-800/80 dark:bg-slate-900/70 dark:text-slate-400 sm:block">
+          {filteredConversations.length} visible
+        </div>
       </motion.div>
 
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setShowArchived(false)}
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${!showArchived ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${!showArchived ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900' : 'bg-white/80 text-slate-600 shadow-sm backdrop-blur dark:bg-slate-900/80 dark:text-slate-300'}`}
         >
           Inbox
         </button>
         <button
           type="button"
           onClick={() => setShowArchived(true)}
-          className={`rounded-full px-4 py-2 text-sm font-semibold ${showArchived ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${showArchived ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900' : 'bg-white/80 text-slate-600 shadow-sm backdrop-blur dark:bg-slate-900/80 dark:text-slate-300'}`}
         >
           Archived
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {FOLDERS.map((folder) => {
           const Icon = folder.icon;
           const active = folderFilter === folder.id;
@@ -142,7 +162,7 @@ export default function ChatListPage() {
               key={folder.id}
               type="button"
               onClick={() => setFolderFilter(folder.id)}
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold ${active ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition-colors ${active ? 'bg-gradient-to-r from-fuchsia-500 via-rose-500 to-orange-400 text-white shadow-lg shadow-rose-500/20' : 'bg-white/80 text-slate-600 shadow-sm backdrop-blur dark:bg-slate-900/80 dark:text-slate-300'}`}
             >
               <Icon className="h-4 w-4" />
               <span>{folder.label}</span>
@@ -155,14 +175,14 @@ export default function ChatListPage() {
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/50 p-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/20"
+          className="flex flex-col items-center justify-center rounded-[32px] border border-dashed border-slate-300/80 bg-white/65 p-10 text-center shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/30"
         >
           <MessageCircle className="mb-4 h-12 w-12 text-slate-300 dark:text-slate-600" />
           <h3 className="mb-2 text-lg font-bold text-slate-900 dark:text-slate-100">No conversations</h3>
           <p className="text-[15px] font-medium text-slate-500">{showArchived ? 'No archived chats in this folder yet.' : 'Open someone\'s profile and tap Message to start chatting.'}</p>
         </motion.div>
       ) : (
-        <ul className="divide-y divide-slate-100 overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-soft dark:divide-slate-800/60 dark:border-slate-800/60 dark:bg-slate-900/50">
+        <ul className="space-y-3">
           {filteredConversations.map((c, i) => (
             <motion.li 
               key={c.id}
@@ -170,33 +190,42 @@ export default function ChatListPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
-              <div className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 items-center gap-4">
-                  <img src={avatarFor(c.other)} alt="" className="h-12 w-12 rounded-full object-cover ring-2 ring-transparent transition-all group-hover:ring-rose-100 dark:group-hover:ring-rose-900/30" />
+              <div className="group rounded-[30px] border border-slate-200/70 bg-white/80 px-4 py-4 shadow-soft backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/70 dark:bg-slate-900/60">
+                <div className="flex items-start gap-3">
+                  <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+                    <div className="rounded-full bg-gradient-to-br from-fuchsia-500 via-rose-500 to-orange-400 p-[2px] shadow-sm">
+                      <img src={avatarFor(c.other)} alt="" className="h-12 w-12 rounded-full object-cover bg-white dark:bg-slate-950" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
+                        {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
+                        <span className="truncate text-xs text-slate-400 dark:text-slate-500">{formatRelative(c.lastMessage?.createdAt)}</span>
+                      </div>
+                      <div className="mt-1 truncate text-[14px] font-medium text-slate-500">
+                        {chatPreview(c)}
+                      </div>
+                    </div>
+                  </Link>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100">{c.other.displayName}</div>
-                      {c.pushMuted && <BellOff className="h-4 w-4 text-slate-400" />}
-                    </div>
-                    <div className="truncate text-[14px] font-medium text-slate-500">
-                      {chatPreview(c)}
+                    <div className="flex items-center justify-end gap-2">
+                      {c.unreadCount > 0 && (
+                        <span className="rounded-full bg-gradient-to-r from-fuchsia-500 to-orange-400 px-2 py-1 text-[10px] font-bold text-white shadow-sm">
+                          {c.unreadCount}
+                        </span>
+                      )}
+                      <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400" />
                     </div>
                   </div>
-                </Link>
-                <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-center gap-2">
-                    {c.unreadCount > 0 && (
-                      <span className="rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold text-white dark:bg-white dark:text-slate-900">
-                        {c.unreadCount}
-                      </span>
-                    )}
-                    <ChevronRight className="h-5 w-5 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400" />
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-2">
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-3 dark:border-slate-800/70">
+                  <span className="mr-auto rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    {c.folder}
+                  </span>
                     <button
                       type="button"
                       onClick={() => void updateConversation(c.id, { archived: !c.archivedAt })}
-                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                       {c.archivedAt ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
                     </button>
@@ -205,13 +234,12 @@ export default function ChatListPage() {
                         key={folder.id}
                         type="button"
                         onClick={() => void updateConversation(c.id, { folder: folder.id })}
-                        className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                       >
                         {folder.label}
                       </button>
                     ))}
                   </div>
-                </div>
               </div>
             </motion.li>
           ))}
