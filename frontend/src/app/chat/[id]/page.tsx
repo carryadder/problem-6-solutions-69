@@ -126,8 +126,6 @@ const WALLPAPERS: Array<{
 ];
 
 const REPORT_REASONS = ['Spam', 'Harassment', 'Impersonation', 'Abuse', 'Other'];
-const REACTION_EMOJI = ['❤️', '😂', '😮', '😢', '🙏', '🔥'];
-
 function formatDay(iso: string) {
   return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
@@ -135,6 +133,16 @@ function formatDay(iso: string) {
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+function formatMessageCount(count: number) {
+  return `${count} message${count === 1 ? '' : 's'}`;
+}
+
+function formatMediaCount(count: number) {
+  return `${count} shared item${count === 1 ? '' : 's'}`;
+}
+
+const REACTION_CHOICES = ['\u2764\uFE0F', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F64F}', '\u{1F525}'];
 
 function statusLabel(conversation: ConversationT | null, typingName: string | null) {
   if (!conversation) return 'Loading conversation';
@@ -215,6 +223,7 @@ export default function ChatThreadPage() {
   const meId = (session as any)?.userId;
 
   const wallpaper = WALLPAPERS.find((item) => item.id === conversation?.wallpaper) || WALLPAPERS[0];
+  const mediaCount = messages.filter((message) => Boolean(message.imageUrl || message.audioUrl)).length;
 
   const lastOwnMessage = useMemo(() => {
     const ownMessages = messages.filter((message) => message.senderId === meId);
@@ -806,6 +815,7 @@ export default function ChatThreadPage() {
     <div className={`absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 overflow-hidden rounded-none bg-gradient-to-br ${wallpaper.shell} md:static md:h-[calc(100vh-8rem)] md:rounded-[32px] md:border md:border-white/50 md:shadow-[0_24px_80px_rgba(15,23,42,0.12)] dark:md:border-white/10`}>
       <div className={`pointer-events-none absolute inset-0 ${wallpaper.overlay}`} />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.24)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.18)_100%)] dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.03)_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.38),transparent_62%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.09),transparent_62%)]" />
 
       <div className="relative flex h-full flex-col gap-3 p-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] md:p-4">
         <header className="relative z-30 rounded-[28px] border border-white/60 bg-white/70 p-3 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/55 dark:shadow-black/20">
@@ -817,7 +827,10 @@ export default function ChatThreadPage() {
             <div className="min-w-0 flex-1">
               {other ? (
                 <Link href={`/u/${other.handle}`} className="flex min-w-0 items-center gap-3">
-                  <img src={avatarFor(other)} alt="" className="h-11 w-11 rounded-2xl object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
+                  <div className="relative shrink-0">
+                    <img src={avatarFor(other)} alt="" className="h-11 w-11 rounded-2xl object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
+                    <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-950" />
+                  </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold text-slate-900 dark:text-white">{other.displayName}</div>
                     <div className={`truncate text-xs ${typingName ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
@@ -933,8 +946,27 @@ export default function ChatThreadPage() {
             </div>
           </div>
 
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/72 px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {formatMessageCount(messages.length)}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/72 px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300">
+              <ImageIcon className="h-3.5 w-3.5" />
+              {formatMediaCount(mediaCount)}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/72 px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300">
+              <Palette className="h-3.5 w-3.5" />
+              {wallpaper.label}
+            </span>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-sm ${conversation?.pushMuted ? 'border-amber-200/80 bg-amber-50/80 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300' : 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300'}`}>
+              {conversation?.pushMuted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+              {conversation?.pushMuted ? 'Muted' : 'Live alerts'}
+            </span>
+          </div>
+
           {searchOpen && (
-            <div className="mt-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
+            <div className="mt-3 rounded-3xl border border-white/60 bg-white/75 p-3 shadow-inner dark:border-white/10 dark:bg-slate-950/60">
               <div className="flex items-center gap-2 rounded-2xl bg-slate-100/80 px-3 py-2 dark:bg-slate-900/80">
                 <Search className="h-4 w-4 text-slate-400" />
                 <input
@@ -945,7 +977,7 @@ export default function ChatThreadPage() {
                 />
               </div>
               {searchQuery && (
-                <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
+                <div className="scrollbar-thin-soft mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
                   {searchBusy && <div className="text-sm text-slate-500">Searching...</div>}
                   {!searchBusy && searchResults.length === 0 && <div className="text-sm text-slate-500">No matches found.</div>}
                   {searchResults.map((message) => (
@@ -984,16 +1016,17 @@ export default function ChatThreadPage() {
 
           {appearanceOpen && (
             <div className="mt-3 space-y-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
-              <div className="flex flex-wrap gap-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {WALLPAPERS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => setWallpaper(item.id)}
                     disabled={appearanceBusy}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${conversation?.wallpaper === item.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white/80 text-slate-600 dark:bg-slate-900/70 dark:text-slate-300'}`}
+                    className={`rounded-[22px] border px-3 py-3 text-left text-xs font-semibold transition-colors ${conversation?.wallpaper === item.id ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900' : 'border-white/70 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-300'}`}
                   >
-                    {item.label}
+                    <span className={`mb-2 block h-10 rounded-2xl bg-gradient-to-br ${item.shell}`} />
+                    <span className="block">{item.label}</span>
                   </button>
                 ))}
               </div>
@@ -1072,19 +1105,24 @@ export default function ChatThreadPage() {
           </div>
         )}
 
-        <div ref={scrollRef} className={`relative flex-1 overflow-y-auto rounded-[32px] border border-white/50 ${wallpaper.bubble} p-4 shadow-inner backdrop-blur-sm dark:border-white/10`}>
+        <div ref={scrollRef} className={`scrollbar-thin-soft relative flex-1 overflow-y-auto rounded-[32px] border border-white/50 ${wallpaper.bubble} p-4 shadow-inner backdrop-blur-sm dark:border-white/10`}>
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent,rgba(255,255,255,0.14))] dark:bg-[linear-gradient(transparent,rgba(255,255,255,0.02))]" />
           <div className="relative flex min-h-full flex-col gap-3">
             {loading && (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading messages...</div>
+              <div className="flex h-full items-center justify-center">
+                <div className="rounded-[28px] border border-white/60 bg-white/75 px-5 py-4 text-sm font-medium text-slate-500 shadow-sm dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300">
+                  Loading messages...
+                </div>
+              </div>
             )}
 
             {!loading && messages.length === 0 && (
-              <div className="flex h-full flex-col items-center justify-center text-slate-500">
+              <div className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center rounded-[32px] border border-dashed border-white/70 bg-white/40 px-6 py-10 text-center text-slate-500 dark:border-white/10 dark:bg-slate-950/35 dark:text-slate-300">
                 <div className="mb-4 rounded-full bg-white/70 p-5 shadow-sm dark:bg-slate-900/60">
                   <MessageSquare className="h-10 w-10 opacity-40" />
                 </div>
-                <p className="text-sm font-medium">No messages yet. Drop the first emoji wave.</p>
+                <p className="text-base font-semibold text-slate-700 dark:text-slate-100">No messages yet</p>
+                <p className="mt-2 text-sm">Break the silence with a quick hello, a photo, or an emoji wave.</p>
               </div>
             )}
 
@@ -1118,7 +1156,7 @@ export default function ChatThreadPage() {
                   )}
 
                   <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`flex max-w-[88%] items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`flex max-w-[92%] items-end gap-2 sm:max-w-[82%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                       {!isMe && (
                         <div className="w-9 shrink-0">
                           {startsGroup ? (
@@ -1154,12 +1192,13 @@ export default function ChatThreadPage() {
                             onClick={() => {
                               if (selectionMode) toggleSelected(message.id);
                             }}
-                            className={`relative rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
+                            className={`group relative overflow-hidden rounded-[26px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-[0_12px_30px_rgba(15,23,42,0.08)] ${
                               isMe
-                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                                : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
+                                ? 'bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_55%,#334155_100%)] text-white dark:bg-[linear-gradient(135deg,#f8fafc_0%,#e2e8f0_100%)] dark:text-slate-900'
+                                : 'border border-white/60 bg-white/88 text-slate-900 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100'
                             } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-rose-400' : ''}`}
                           >
+                          <span className={`pointer-events-none absolute inset-x-0 top-0 h-px ${isMe ? 'bg-white/30 dark:bg-slate-400/30' : 'bg-white/90 dark:bg-white/10'}`} />
                           {selectionMode && (
                             <span className="absolute left-3 top-3 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
                               {selectedIds.includes(message.id) ? 'Selected' : 'Tap'}
@@ -1192,7 +1231,7 @@ export default function ChatThreadPage() {
                                   className="mb-2 max-h-80 w-full rounded-2xl object-cover"
                                 />
                               )}
-                              {message.body && <div>{message.body}</div>}
+                              {message.body && <div className="whitespace-pre-wrap break-words">{message.body}</div>}
                               {message.audioUrl && (
                                 <audio controls className="mt-1 w-full max-w-[260px]">
                                   <source src={message.audioUrl} />
@@ -1213,7 +1252,7 @@ export default function ChatThreadPage() {
                             <button
                               type="button"
                               onClick={() => setActiveMessageId((value) => (value === message.id ? null : message.id))}
-                              className="mt-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-slate-400 shadow-sm hover:text-slate-700 dark:bg-slate-900/70 dark:text-slate-500 dark:hover:text-slate-200"
+                              className="mt-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-slate-400 shadow-sm transition-colors hover:bg-white hover:text-slate-700 dark:bg-slate-900/70 dark:text-slate-500 dark:hover:bg-slate-900 dark:hover:text-slate-200"
                               aria-label="Message options"
                             >
                               <MoreHorizontal className="h-4 w-4" />
@@ -1228,7 +1267,7 @@ export default function ChatThreadPage() {
                                 key={emoji}
                                 type="button"
                                 onClick={() => void toggleReaction(message.id, emoji)}
-                                className="rounded-full bg-white/80 px-2 py-1 text-xs shadow-sm dark:bg-slate-900/70"
+                                className="rounded-full border border-white/70 bg-white/80 px-2 py-1 text-xs shadow-sm dark:border-white/10 dark:bg-slate-900/70"
                               >
                                 {emoji} {count}
                               </button>
@@ -1239,7 +1278,7 @@ export default function ChatThreadPage() {
                         {activeMessageId === message.id && !selectionMode && !composerDisabled && !message.deletedForEveryoneAt && (
                           <div className={`mt-2 flex flex-wrap gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                             <div className="flex rounded-full bg-white/80 p-1 shadow-sm dark:bg-slate-900/75">
-                              {REACTION_EMOJI.map((emoji) => (
+                              {REACTION_CHOICES.map((emoji) => (
                                 <button
                                   key={emoji}
                                   type="button"
@@ -1278,7 +1317,7 @@ export default function ChatThreadPage() {
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:0.15s]" />
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:0.3s]" />
                   </span>
-                  <span>{typingName} is typing…</span>
+                  <span>{typingName} is typing...</span>
                 </div>
               </div>
             )}
@@ -1329,9 +1368,9 @@ export default function ChatThreadPage() {
             </div>
           )}
 
-          <div className="flex items-end gap-2">
+          <div className="grid grid-cols-[auto_auto_auto_minmax(0,1fr)] items-end gap-1.5 sm:flex sm:gap-2">
             <div className="relative">
-              <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Emoji picker"><Smile className="h-5 w-5" /></button>
+              <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 sm:h-12 sm:w-12 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Emoji picker"><Smile className="h-5 w-5" /></button>
               {pickerOpen && (
                 <div className="absolute bottom-full left-0 z-50 mb-2">
                   <EmojiPicker onPick={(emoji) => { setDraft((value) => (value + emoji).slice(0, 500)); setPickerOpen(false); }} />
@@ -1340,7 +1379,7 @@ export default function ChatThreadPage() {
             </div>
 
             <div>
-              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Send image"><ImagePlus className="h-5 w-5" /></button>
+              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 sm:h-12 sm:w-12 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Send image"><ImagePlus className="h-5 w-5" /></button>
               <input
                 ref={imageInputRef}
                 type="file"
@@ -1353,9 +1392,9 @@ export default function ChatThreadPage() {
               />
             </div>
 
-            <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Record voice note"><Mic className="h-5 w-5" /></button>
+            <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 sm:h-12 sm:w-12 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Record voice note"><Mic className="h-5 w-5" /></button>
 
-            <div className="flex-1 rounded-[26px] bg-slate-100/80 px-4 py-2 dark:bg-slate-800/80">
+            <div className="min-w-0 flex-1 rounded-[24px] border border-slate-200/70 bg-slate-100/90 px-3 py-2.5 shadow-inner sm:rounded-[26px] sm:px-4 dark:border-white/10 dark:bg-slate-800/80">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value.slice(0, 500))}
@@ -1365,14 +1404,18 @@ export default function ChatThreadPage() {
                     void send();
                   }
                 }}
-                placeholder={composerDisabled ? 'Messaging unavailable' : 'Type a message…'}
-                rows={1}
+                placeholder={composerDisabled ? 'Messaging unavailable' : 'Type a message...'}
+                rows={2}
                 disabled={composerDisabled}
-                className="max-h-32 min-h-[28px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-100"
+                className="max-h-32 min-h-[44px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-100"
               />
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                <span className="hidden sm:inline">{composerDisabled ? 'Messaging is paused for this chat.' : 'Enter sends. Shift+Enter adds a new line.'}</span>
+                <span className="sm:ml-auto">{draft.length}/500</span>
+              </div>
             </div>
 
-            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"><Send className="h-4 w-4" /><span>{editTarget ? 'Save' : ''}</span></button>
+            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="col-span-full inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.01] disabled:pointer-events-none disabled:opacity-50 sm:w-auto dark:bg-white dark:text-slate-900"><Send className="h-4 w-4" /><span>{editTarget ? 'Save message' : 'Send message'}</span></button>
           </div>
         </div>
       </div>
@@ -1388,7 +1431,7 @@ export default function ChatThreadPage() {
               <button type="button" onClick={() => setMediaOpen(false)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><X className="h-5 w-5" /></button>
             </div>
 
-            <div className="max-h-[70vh] space-y-3 overflow-y-auto">
+            <div className="scrollbar-thin-soft max-h-[70vh] space-y-3 overflow-y-auto pr-1">
               {mediaBusy && <div className="text-sm text-slate-500">Loading shared media...</div>}
               {!mediaBusy && mediaItems.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700">
@@ -1440,7 +1483,7 @@ export default function ChatThreadPage() {
               {messageSnippet(forwardSource)}
             </div>
 
-            <div className="max-h-72 space-y-2 overflow-y-auto">
+            <div className="scrollbar-thin-soft max-h-72 space-y-2 overflow-y-auto pr-1">
               {forwardTargets.map((item) => (
                 <button
                   key={item.id}
