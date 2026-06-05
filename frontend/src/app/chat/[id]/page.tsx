@@ -126,6 +126,8 @@ const WALLPAPERS: Array<{
 ];
 
 const REPORT_REASONS = ['Spam', 'Harassment', 'Impersonation', 'Abuse', 'Other'];
+const REACTION_EMOJI = ['❤️', '😂', '😮', '😢', '🙏', '🔥'];
+
 function formatDay(iso: string) {
   return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
@@ -134,23 +136,13 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatMessageCount(count: number) {
-  return `${count} message${count === 1 ? '' : 's'}`;
-}
-
-function formatMediaCount(count: number) {
-  return `${count} shared item${count === 1 ? '' : 's'}`;
-}
-
-const REACTION_CHOICES = ['\u2764\uFE0F', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F64F}', '\u{1F525}'];
-
 function statusLabel(conversation: ConversationT | null, typingName: string | null) {
   if (!conversation) return 'Loading conversation';
   if (conversation.hasBlockedMe) return 'This contact blocked you';
   if (conversation.blockedByMe) return 'You blocked this contact';
   if (typingName) return `${typingName} is typing...`;
   if (conversation.pushMuted) return 'Push notifications muted';
-  return 'End-to-end encrypted chat';
+  return 'Private end-to-end vibe';
 }
 
 function messageSnippet(message: MessagePreview | MessageT | null) {
@@ -182,7 +174,6 @@ export default function ChatThreadPage() {
   const [muteBusy, setMuteBusy] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [appearanceBusy, setAppearanceBusy] = useState(false);
-  const [themeDraft, setThemeDraft] = useState<WallpaperId | null>(null);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [typingName, setTypingName] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
@@ -224,7 +215,6 @@ export default function ChatThreadPage() {
   const meId = (session as any)?.userId;
 
   const wallpaper = WALLPAPERS.find((item) => item.id === conversation?.wallpaper) || WALLPAPERS[0];
-  const mediaCount = messages.filter((message) => Boolean(message.imageUrl || message.audioUrl)).length;
 
   const lastOwnMessage = useMemo(() => {
     const ownMessages = messages.filter((message) => message.senderId === meId);
@@ -236,28 +226,6 @@ export default function ChatThreadPage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.replace('/login');
   }, [status, router]);
-
-  useEffect(() => {
-    if (!appearanceOpen) return;
-    setThemeDraft(conversation?.wallpaper || wallpaper.id);
-  }, [appearanceOpen, conversation?.wallpaper, wallpaper.id]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setPickerOpen(false);
-      setSettingsMenuOpen(false);
-      setSearchOpen(false);
-      setAppearanceOpen(false);
-      setReportOpen(false);
-      setMediaOpen(false);
-      setForwardSource(null);
-      setActiveMessageId(null);
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
@@ -621,8 +589,7 @@ export default function ChatThreadPage() {
   }
 
   async function setWallpaper(nextWallpaper: WallpaperId) {
-    if (!conversation || appearanceBusy) return false;
-    if (conversation.wallpaper === nextWallpaper) return true;
+    if (!conversation || appearanceBusy || conversation.wallpaper === nextWallpaper) return;
     setAppearanceBusy(true);
     setConversation({ ...conversation, wallpaper: nextWallpaper });
 
@@ -633,11 +600,8 @@ export default function ChatThreadPage() {
         'PATCH',
       );
       setConversation((prev) => (prev ? { ...prev, wallpaper: res.preferences.wallpaper, pushMuted: res.preferences.pushMuted } : prev));
-      return true;
     } catch {
       setConversation(conversation);
-      setError('Could not update chat theme.');
-      return false;
     } finally {
       setAppearanceBusy(false);
     }
@@ -839,37 +803,30 @@ export default function ChatThreadPage() {
   const other = conversation?.other || messages.find((message) => message.senderId !== meId)?.sender || null;
 
   return (
-    <div className="absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 overflow-hidden rounded-none bg-[#09090d] text-slate-100 md:static md:mx-auto md:h-[calc(100vh-8rem)] md:max-w-[390px] md:rounded-[42px] md:border md:border-white/10 md:shadow-[0_30px_110px_rgba(3,7,18,0.55)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.18),transparent_34%),radial-gradient(circle_at_bottom,rgba(59,130,246,0.18),transparent_34%)]" />
-      <div className={`pointer-events-none absolute inset-0 opacity-25 ${wallpaper.overlay}`} />
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-7 justify-center md:flex">
-        <div className="mt-2 h-1.5 w-24 rounded-full bg-white/12" />
-      </div>
-      <div className="pointer-events-none absolute inset-[1px] rounded-none border border-white/6 md:rounded-[41px]" />
+    <div className={`absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 overflow-hidden rounded-none bg-gradient-to-br ${wallpaper.shell} md:static md:h-[calc(100vh-8rem)] md:rounded-[32px] md:border md:border-white/50 md:shadow-[0_24px_80px_rgba(15,23,42,0.12)] dark:md:border-white/10`}>
+      <div className={`pointer-events-none absolute inset-0 ${wallpaper.overlay}`} />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.24)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.18)_100%)] dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.03)_100%)]" />
 
-      <div className="relative flex h-full flex-col gap-2.5 p-2 pt-[calc(env(safe-area-inset-top,0px)+10px)] md:p-3">
-        <header className="relative z-30 rounded-[26px] border border-white/10 bg-black/45 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+      <div className="relative flex h-full flex-col gap-3 p-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] md:p-4">
+        <header className="rounded-[28px] border border-white/60 bg-white/70 p-3 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/55 dark:shadow-black/20">
           <div className="flex items-start gap-3">
-            <Link href="/chat" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/6 text-slate-300 transition-colors hover:bg-white/10 hover:text-white">
+            <Link href="/chat" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-slate-500 shadow-sm transition-colors hover:text-slate-900 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white">
               <ArrowLeft className="h-4 w-4" />
             </Link>
 
             <div className="min-w-0 flex-1">
               {other ? (
                 <Link href={`/u/${other.handle}`} className="flex min-w-0 items-center gap-3">
-                  <div className="relative shrink-0">
-                    <img src={avatarFor(other)} alt="" className="h-10 w-10 rounded-full border border-orange-300/60 object-cover" />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#09090d] bg-emerald-400" />
-                  </div>
+                  <img src={avatarFor(other)} alt="" className="h-11 w-11 rounded-2xl object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
                   <div className="min-w-0">
-                    <div className="truncate text-[15px] font-semibold text-white">{other.displayName}</div>
-                    <div className={`truncate text-[12px] ${typingName ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    <div className="truncate text-sm font-bold text-slate-900 dark:text-white">{other.displayName}</div>
+                    <div className={`truncate text-xs ${typingName ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
                       {statusLabel(conversation, typingName)}
                     </div>
                   </div>
                 </Link>
               ) : (
-                <div className="text-sm font-semibold text-slate-400">Preparing chat...</div>
+                <div className="text-sm font-semibold text-slate-500">Preparing chat...</div>
               )}
             </div>
 
@@ -877,21 +834,21 @@ export default function ChatThreadPage() {
               <button
                 type="button"
                 onClick={() => setSettingsMenuOpen((value) => !value)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/6 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white"
                 aria-label="Chat options"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
 
               {settingsMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-[26px] border border-white/10 bg-[#11131a]/96 p-2 shadow-2xl backdrop-blur">
+                <div className="absolute right-0 top-full z-20 mt-2 w-52 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-slate-800/80 dark:bg-slate-950/95">
                   <button
                     type="button"
                     onClick={() => {
                       setSearchOpen((value) => !value);
                       setSettingsMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/6"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                   >
                     <Search className="h-4 w-4" />
                     Search chat
@@ -902,7 +859,7 @@ export default function ChatThreadPage() {
                       setMediaOpen(true);
                       setSettingsMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/6"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                   >
                     <ImageIcon className="h-4 w-4" />
                     Shared media
@@ -914,7 +871,7 @@ export default function ChatThreadPage() {
                       else setSelectionMode(true);
                       setSettingsMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/6"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                   >
                     <CheckSquare2 className="h-4 w-4" />
                     {selectionMode ? 'Cancel selection' : 'Select messages'}
@@ -927,7 +884,7 @@ export default function ChatThreadPage() {
                         setSettingsMenuOpen(false);
                       }}
                       disabled={muteBusy}
-                      className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/6 disabled:opacity-50"
+                      className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-900"
                     >
                       {conversation.pushMuted ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
                       {conversation.pushMuted ? 'Unmute notifications' : 'Mute notifications'}
@@ -936,12 +893,10 @@ export default function ChatThreadPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setThemeDraft(conversation?.wallpaper || wallpaper.id);
-                      setAppearanceOpen(true);
-                      setReportOpen(false);
+                      setAppearanceOpen((value) => !value);
                       setSettingsMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/6"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
                   >
                     <Palette className="h-4 w-4" />
                     Chat theme
@@ -955,7 +910,7 @@ export default function ChatThreadPage() {
                           setSettingsMenuOpen(false);
                         }}
                         disabled={blockBusy}
-                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/6 disabled:opacity-50"
+                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-900"
                       >
                         <ShieldBan className="h-4 w-4" />
                         {conversation?.blockedByMe ? 'Unblock user' : 'Block user'}
@@ -963,11 +918,10 @@ export default function ChatThreadPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setReportOpen(true);
-                          setAppearanceOpen(false);
+                          setReportOpen((value) => !value);
                           setSettingsMenuOpen(false);
                         }}
-                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-500/10"
+                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/30"
                       >
                         <Flag className="h-4 w-4" />
                         Report user
@@ -980,20 +934,20 @@ export default function ChatThreadPage() {
           </div>
 
           {searchOpen && (
-            <div className="mt-3 rounded-[24px] border border-white/10 bg-white/5 p-3">
-              <div className="flex items-center gap-2 rounded-2xl border border-white/8 bg-black/35 px-3 py-2">
-                <Search className="h-4 w-4 text-slate-500" />
+            <div className="mt-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
+              <div className="flex items-center gap-2 rounded-2xl bg-slate-100/80 px-3 py-2 dark:bg-slate-900/80">
+                <Search className="h-4 w-4 text-slate-400" />
                 <input
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Search this conversation"
-                  className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
                 />
               </div>
               {searchQuery && (
-                <div className="scrollbar-thin-soft mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {searchBusy && <div className="text-sm text-slate-400">Searching...</div>}
-                  {!searchBusy && searchResults.length === 0 && <div className="text-sm text-slate-400">No matches found.</div>}
+                <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
+                  {searchBusy && <div className="text-sm text-slate-500">Searching...</div>}
+                  {!searchBusy && searchResults.length === 0 && <div className="text-sm text-slate-500">No matches found.</div>}
                   {searchResults.map((message) => (
                     <button
                       key={message.id}
@@ -1003,9 +957,9 @@ export default function ChatThreadPage() {
                         setSearchQuery('');
                         jumpToMessage(message.id);
                       }}
-                      className="block w-full rounded-2xl border border-white/8 bg-white/5 px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/8"
+                      className="block w-full rounded-2xl bg-slate-100/80 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-200 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-900"
                     >
-                      <div className="truncate font-semibold text-white">{message.sender.displayName}</div>
+                      <div className="truncate font-semibold text-slate-900 dark:text-white">{message.sender.displayName}</div>
                       <div className="truncate">{messageSnippet(message)}</div>
                     </button>
                   ))}
@@ -1018,50 +972,119 @@ export default function ChatThreadPage() {
             <button
               type="button"
               onClick={() => jumpToMessage(conversation.pinnedMessage!.id)}
-              className="mt-3 flex w-full items-center gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-left"
+              className="mt-3 flex w-full items-center gap-3 rounded-3xl border border-white/60 bg-white/75 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/60"
             >
-              <Pin className="h-4 w-4 text-fuchsia-400" />
+              <Pin className="h-4 w-4 text-rose-500" />
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Pinned message</div>
-                <div className="truncate text-sm text-slate-200">{messageSnippet(conversation.pinnedMessage)}</div>
+                <div className="truncate text-sm text-slate-700 dark:text-slate-300">{messageSnippet(conversation.pinnedMessage)}</div>
               </div>
             </button>
           )}
 
+          {appearanceOpen && (
+            <div className="mt-3 space-y-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
+              <div className="flex flex-wrap gap-2">
+                {WALLPAPERS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setWallpaper(item.id)}
+                    disabled={appearanceBusy}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${conversation?.wallpaper === item.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white/80 text-slate-600 dark:bg-slate-900/70 dark:text-slate-300'}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {other && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleBlock}
+                    disabled={blockBusy}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold ${conversation?.blockedByMe ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'}`}
+                  >
+                    <ShieldBan className="h-3.5 w-3.5" />
+                    <span>{conversation?.blockedByMe ? 'Unblock contact' : 'Block contact'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReportOpen((value) => !value)}
+                    className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                  >
+                    <Flag className="h-3.5 w-3.5" />
+                    <span>Report</span>
+                  </button>
+                </div>
+              )}
+
+              {reportOpen && (
+                <div className="space-y-3 rounded-3xl border border-amber-200/70 bg-amber-50/80 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">Report conversation</div>
+                  <select
+                    value={reportReason}
+                    onChange={(event) => setReportReason(event.target.value)}
+                    className="w-full rounded-2xl border border-amber-200/80 bg-white px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-slate-950"
+                  >
+                    {REPORT_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>{reason}</option>
+                    ))}
+                  </select>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(event) => setReportDetails(event.target.value.slice(0, 500))}
+                    rows={3}
+                    placeholder="Share any context that helps moderation review this faster."
+                    className="w-full rounded-2xl border border-amber-200/80 bg-white px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-slate-950"
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-amber-700/80 dark:text-amber-300/70">{reportDetails.length}/500</div>
+                    <button
+                      type="button"
+                      onClick={submitReport}
+                      disabled={reportBusy}
+                      className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white"
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      <span>{reportBusy ? 'Submitting...' : 'Submit report'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </header>
 
         {reportMessage && (
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/85 px-4 py-3 text-sm text-emerald-700 shadow-sm dark:border-emerald-900/30 dark:bg-emerald-950/25 dark:text-emerald-300">
             {reportMessage}
           </div>
         )}
 
         {selectionMode && (
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm backdrop-blur">
-            <span className="font-semibold text-slate-100">{selectedIds.length} selected</span>
-            <button type="button" onClick={() => void applyBulkAction('star')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-100 disabled:opacity-50">Star</button>
-            <button type="button" onClick={() => void applyBulkAction('unstar')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-100 disabled:opacity-50">Unstar</button>
-            <button type="button" onClick={() => void applyBulkAction('delete_me')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full border border-rose-400/20 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 disabled:opacity-50">Delete for me</button>
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/60 bg-white/75 px-4 py-3 text-sm shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/60">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">{selectedIds.length} selected</span>
+            <button type="button" onClick={() => void applyBulkAction('star')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm disabled:opacity-50 dark:bg-slate-900 dark:text-slate-200">Star</button>
+            <button type="button" onClick={() => void applyBulkAction('unstar')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm disabled:opacity-50 dark:bg-slate-900 dark:text-slate-200">Unstar</button>
+            <button type="button" onClick={() => void applyBulkAction('delete_me')} disabled={bulkBusy || selectedIds.length === 0} className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm disabled:opacity-50 dark:bg-rose-950/40 dark:text-rose-300">Delete for me</button>
           </div>
         )}
 
-        <div ref={scrollRef} className="scrollbar-thin-soft relative flex-1 overflow-y-auto rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(9,9,13,0.96),rgba(17,18,24,0.98))] px-3 py-4 shadow-inner">
-          <div className="relative mx-auto flex min-h-full w-full max-w-[330px] flex-col gap-3">
+        <div ref={scrollRef} className={`relative flex-1 overflow-y-auto rounded-[32px] border border-white/50 ${wallpaper.bubble} p-4 shadow-inner backdrop-blur-sm dark:border-white/10`}>
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent,rgba(255,255,255,0.14))] dark:bg-[linear-gradient(transparent,rgba(255,255,255,0.02))]" />
+          <div className="relative flex min-h-full flex-col gap-3">
             {loading && (
-              <div className="flex h-full items-center justify-center">
-                <div className="rounded-[28px] border border-white/8 bg-white/6 px-5 py-4 text-sm font-medium text-slate-300">
-                  Loading messages...
-                </div>
-              </div>
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading messages...</div>
             )}
 
             {!loading && messages.length === 0 && (
-              <div className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center rounded-[32px] border border-dashed border-white/10 bg-white/5 px-6 py-10 text-center text-slate-400">
-                <div className="mb-4 rounded-full bg-white/6 p-5">
+              <div className="flex h-full flex-col items-center justify-center text-slate-500">
+                <div className="mb-4 rounded-full bg-white/70 p-5 shadow-sm dark:bg-slate-900/60">
                   <MessageSquare className="h-10 w-10 opacity-40" />
                 </div>
-                <p className="text-base font-semibold text-slate-100">No messages yet</p>
-                <p className="mt-2 text-sm">Break the silence with a quick hello, a photo, or an emoji wave.</p>
+                <p className="text-sm font-medium">No messages yet. Drop the first emoji wave.</p>
               </div>
             )}
 
@@ -1088,7 +1111,7 @@ export default function ChatThreadPage() {
                 <div key={message.id} data-message-id={message.id} className="space-y-2 rounded-3xl transition-shadow">
                   {showDay && (
                     <div className="flex justify-center">
-                      <div className="rounded-full border border-white/8 bg-white/5 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500">
+                      <div className="rounded-full bg-white/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm dark:bg-slate-900/65 dark:text-slate-400">
                         {formatDay(message.createdAt)}
                       </div>
                     </div>
@@ -1100,7 +1123,7 @@ export default function ChatThreadPage() {
                         <div className="w-9 shrink-0">
                           {startsGroup ? (
                             <Link href={`/u/${message.sender.handle}`}>
-                              <img src={avatarFor(message.sender)} alt="" className="h-8 w-8 rounded-full border border-white/10 object-cover" />
+                              <img src={avatarFor(message.sender)} alt="" className="h-9 w-9 rounded-2xl object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
                             </Link>
                           ) : (
                             <div className="w-9" />
@@ -1110,9 +1133,9 @@ export default function ChatThreadPage() {
 
                       <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                         {!isMe && startsGroup && (
-                            <span className="mb-1 ml-2 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">
-                              {message.sender.displayName}
-                            </span>
+                          <span className="mb-1 ml-2 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500/80">
+                            {message.sender.displayName}
+                          </span>
                         )}
                         <div className={`flex items-start gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                           <button
@@ -1131,30 +1154,29 @@ export default function ChatThreadPage() {
                             onClick={() => {
                               if (selectionMode) toggleSelected(message.id);
                             }}
-                            className={`group relative overflow-hidden rounded-[22px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-[0_12px_30px_rgba(0,0,0,0.24)] ${
+                            className={`relative rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-sm ${
                               isMe
-                                ? 'bg-[linear-gradient(135deg,#b517ff_0%,#7b2cff_46%,#465dff_100%)] text-white'
-                                : 'bg-[#26272d] text-slate-100'
-                            } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-fuchsia-400' : ''}`}
+                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                                : 'border border-white/60 bg-white/86 text-slate-900 dark:border-white/10 dark:bg-slate-900/78 dark:text-slate-100'
+                            } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-rose-400' : ''}`}
                           >
-                          <span className={`pointer-events-none absolute inset-x-0 top-0 h-px ${isMe ? 'bg-white/30' : 'bg-white/8'}`} />
                           {selectionMode && (
-                            <span className="absolute left-3 top-3 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-bold text-white">
+                            <span className="absolute left-3 top-3 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
                               {selectedIds.includes(message.id) ? 'Selected' : 'Tap'}
                             </span>
                           )}
                           {message.starredByMe && (
-                            <span className={`absolute right-3 top-3 ${isMe ? 'text-amber-200' : 'text-amber-400'}`}>
+                            <span className={`absolute right-3 top-3 ${isMe ? 'text-amber-300 dark:text-amber-500' : 'text-amber-500'}`}>
                               <Star className="h-3.5 w-3.5 fill-current" />
                             </span>
                           )}
                           {message.forwardedFromMessage && (
-                            <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/18 bg-white/12 text-white/85' : 'border-white/8 bg-black/18 text-slate-300'}`}>
+                            <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/20 bg-white/10 text-white/80 dark:border-slate-300/30 dark:bg-slate-900/10 dark:text-slate-600' : 'border-slate-200/80 bg-slate-100/70 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300'}`}>
                               Forwarded from {message.forwardedFromMessage.sender.displayName}
                             </div>
                           )}
                           {message.replyTo && (
-                            <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/18 bg-white/12 text-white/85' : 'border-white/8 bg-black/18 text-slate-300'}`}>
+                            <div className={`mb-2 rounded-2xl border px-3 py-2 text-xs ${isMe ? 'border-white/20 bg-white/10 text-white/80 dark:border-slate-300/30 dark:bg-slate-900/10 dark:text-slate-600' : 'border-slate-200/80 bg-slate-100/70 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300'}`}>
                               <div className="font-semibold">Replying to {message.replyTo.sender.displayName}</div>
                               <div className="truncate">{messageSnippet(message.replyTo)}</div>
                             </div>
@@ -1170,7 +1192,7 @@ export default function ChatThreadPage() {
                                   className="mb-2 max-h-80 w-full rounded-2xl object-cover"
                                 />
                               )}
-                              {message.body && <div className="whitespace-pre-wrap break-words">{message.body}</div>}
+                              {message.body && <div>{message.body}</div>}
                               {message.audioUrl && (
                                 <audio controls className="mt-1 w-full max-w-[260px]">
                                   <source src={message.audioUrl} />
@@ -1178,7 +1200,7 @@ export default function ChatThreadPage() {
                               )}
                             </>
                           )}
-                          <div className={`mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${isMe ? 'justify-end text-white/70' : 'justify-start text-slate-400'}`}>
+                          <div className={`mt-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${isMe ? 'justify-end text-white/60 dark:text-slate-500' : 'justify-start text-slate-500 dark:text-slate-400'}`}>
                             <span>{formatTime(message.createdAt)}</span>
                             {message.editedAt && <span>Edited</span>}
                             {isMe && (
@@ -1191,7 +1213,7 @@ export default function ChatThreadPage() {
                             <button
                               type="button"
                               onClick={() => setActiveMessageId((value) => (value === message.id ? null : message.id))}
-                              className="mt-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/8 bg-white/6 text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-100"
+                              className="mt-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-slate-400 shadow-sm hover:text-slate-700 dark:bg-slate-900/70 dark:text-slate-500 dark:hover:text-slate-200"
                               aria-label="Message options"
                             >
                               <MoreHorizontal className="h-4 w-4" />
@@ -1206,7 +1228,7 @@ export default function ChatThreadPage() {
                                 key={emoji}
                                 type="button"
                                 onClick={() => void toggleReaction(message.id, emoji)}
-                                className="rounded-full border border-white/8 bg-white/6 px-2 py-1 text-xs text-slate-100"
+                                className="rounded-full bg-white/80 px-2 py-1 text-xs shadow-sm dark:bg-slate-900/70"
                               >
                                 {emoji} {count}
                               </button>
@@ -1216,28 +1238,28 @@ export default function ChatThreadPage() {
 
                         {activeMessageId === message.id && !selectionMode && !composerDisabled && !message.deletedForEveryoneAt && (
                           <div className={`mt-2 flex flex-wrap gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className="flex rounded-full border border-white/8 bg-white/6 p-1">
-                              {REACTION_CHOICES.map((emoji) => (
+                            <div className="flex rounded-full bg-white/80 p-1 shadow-sm dark:bg-slate-900/75">
+                              {REACTION_EMOJI.map((emoji) => (
                                 <button
                                   key={emoji}
                                   type="button"
                                   onClick={() => void toggleReaction(message.id, emoji)}
-                                  className="rounded-full px-2 py-1 text-base hover:bg-white/10"
+                                  className="rounded-full px-2 py-1 text-base hover:bg-slate-100 dark:hover:bg-slate-800"
                                 >
                                   {emoji}
                                 </button>
                               ))}
                             </div>
-                            <button type="button" onClick={() => { setReplyTarget(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-100"><Reply className="h-3.5 w-3.5" />Reply</button>
-                            <button type="button" onClick={() => { setForwardSource(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-100"><Forward className="h-3.5 w-3.5" />Forward</button>
+                            <button type="button" onClick={() => { setReplyTarget(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Reply className="h-3.5 w-3.5" />Reply</button>
+                            <button type="button" onClick={() => { setForwardSource(message); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Forward className="h-3.5 w-3.5" />Forward</button>
                             {isMe && !message.audioUrl && (
-                              <button type="button" onClick={() => { setEditTarget(message); setReplyTarget(null); setDraft(message.body); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-100"><SquarePen className="h-3.5 w-3.5" />Edit</button>
+                              <button type="button" onClick={() => { setEditTarget(message); setReplyTarget(null); setDraft(message.body); setActiveMessageId(null); }} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><SquarePen className="h-3.5 w-3.5" />Edit</button>
                             )}
-                            <button type="button" onClick={() => void toggleStar(message)} className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-100"><Star className={`h-3.5 w-3.5 ${message.starredByMe ? 'fill-current text-amber-400' : ''}`} />{message.starredByMe ? 'Unstar' : 'Star'}</button>
-                            <button type="button" onClick={() => void togglePinned(message)} className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-100"><Pin className="h-3.5 w-3.5" />{conversation?.pinnedMessage?.id === message.id ? 'Unpin' : 'Pin'}</button>
-                            <button type="button" onClick={() => void deleteMessage(message, 'me')} className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/6 px-3 py-1.5 text-xs font-semibold text-slate-100"><Trash2 className="h-3.5 w-3.5" />Delete for me</button>
+                            <button type="button" onClick={() => void toggleStar(message)} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Star className={`h-3.5 w-3.5 ${message.starredByMe ? 'fill-current text-amber-500' : ''}`} />{message.starredByMe ? 'Unstar' : 'Star'}</button>
+                            <button type="button" onClick={() => void togglePinned(message)} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Pin className="h-3.5 w-3.5" />{conversation?.pinnedMessage?.id === message.id ? 'Unpin' : 'Pin'}</button>
+                            <button type="button" onClick={() => void deleteMessage(message, 'me')} className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm dark:bg-slate-900/75 dark:text-slate-300"><Trash2 className="h-3.5 w-3.5" />Delete for me</button>
                             {isMe && (
-                              <button type="button" onClick={() => void deleteMessage(message, 'everyone')} className="inline-flex items-center gap-2 rounded-full border border-rose-400/20 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300"><Trash2 className="h-3.5 w-3.5" />Delete for everyone</button>
+                              <button type="button" onClick={() => void deleteMessage(message, 'everyone')} className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm dark:bg-rose-950/40 dark:text-rose-300"><Trash2 className="h-3.5 w-3.5" />Delete for everyone</button>
                             )}
                           </div>
                         )}
@@ -1250,13 +1272,13 @@ export default function ChatThreadPage() {
 
             {typingName && !composerDisabled && (
               <div className="flex justify-start">
-                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2 text-xs font-semibold text-slate-300">
+                <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-500 shadow-sm dark:border-white/10 dark:bg-slate-900/75 dark:text-slate-300">
                   <span className="flex gap-1">
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500" />
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:0.15s]" />
                     <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:0.3s]" />
                   </span>
-                  <span>{typingName} is typing...</span>
+                  <span>{typingName} is typing…</span>
                 </div>
               </div>
             )}
@@ -1264,33 +1286,33 @@ export default function ChatThreadPage() {
         </div>
 
         {error && (
-          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+          <div className="rounded-2xl border border-rose-200/70 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 shadow-sm dark:border-rose-900/30 dark:bg-rose-950/30 dark:text-rose-300">
             {error}
           </div>
         )}
 
-        <div className="rounded-[26px] border border-white/10 bg-[#11131a]/92 p-2.5 shadow-[0_-10px_32px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+        <div className="rounded-[28px] border border-white/60 bg-white/78 p-2 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/72">
           {editTarget && (
-            <div className="mb-2 flex items-start justify-between rounded-2xl border border-amber-400/15 bg-amber-500/10 px-4 py-3 text-sm">
+            <div className="mb-2 flex items-start justify-between rounded-2xl bg-amber-50/90 px-4 py-3 text-sm dark:bg-amber-950/25">
               <div>
-                <div className="font-semibold text-amber-300">Editing message</div>
-                <div className="text-amber-200/80">{messageSnippet(editTarget)}</div>
+                <div className="font-semibold text-amber-700 dark:text-amber-300">Editing message</div>
+                <div className="text-amber-700/80 dark:text-amber-300/80">{messageSnippet(editTarget)}</div>
               </div>
-              <button type="button" onClick={() => { setEditTarget(null); setDraft(''); }} className="text-amber-300 hover:text-amber-100"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={() => { setEditTarget(null); setDraft(''); }} className="text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"><X className="h-4 w-4" /></button>
             </div>
           )}
           {replyTarget && (
-            <div className="mb-2 flex items-start justify-between rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm">
+            <div className="mb-2 flex items-start justify-between rounded-2xl bg-slate-100/80 px-4 py-3 text-sm dark:bg-slate-900/80">
               <div>
-                <div className="font-semibold text-slate-100">Replying to {replyTarget.sender.displayName}</div>
-                <div className="text-slate-400">{messageSnippet(replyTarget)}</div>
+                <div className="font-semibold text-slate-700 dark:text-slate-200">Replying to {replyTarget.sender.displayName}</div>
+                <div className="text-slate-500 dark:text-slate-400">{messageSnippet(replyTarget)}</div>
               </div>
-              <button type="button" onClick={() => setReplyTarget(null)} className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setReplyTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><X className="h-4 w-4" /></button>
             </div>
           )}
 
           {composerDisabled && (
-            <div className="mb-2 rounded-2xl border border-white/8 bg-white/5 px-4 py-3 text-sm text-slate-300">
+            <div className="mb-2 rounded-2xl bg-slate-100/80 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900/80 dark:text-slate-300">
               {conversation?.blockedByMe
                 ? 'You blocked this contact. Unblock them to start chatting again.'
                 : 'This contact blocked you. You can still view the thread, but sending is disabled.'}
@@ -1298,7 +1320,7 @@ export default function ChatThreadPage() {
           )}
 
           {isRecording && (
-            <div className="mb-2 flex items-center justify-between rounded-2xl border border-rose-400/15 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+            <div className="mb-2 flex items-center justify-between rounded-2xl bg-rose-50/90 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-rose-500" />
                 Recording voice note {recordingSeconds}s
@@ -1308,34 +1330,32 @@ export default function ChatThreadPage() {
           )}
 
           <div className="flex items-end gap-2">
-            <div className="flex shrink-0 items-center gap-2">
-              <div className="relative">
-                <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/6 text-slate-300 transition-colors hover:bg-white/10 hover:text-white" aria-label="Emoji picker"><Smile className="h-4 w-4" /></button>
-                {pickerOpen && (
-                  <div className="absolute bottom-full left-0 z-50 mb-2">
-                    <EmojiPicker onPick={(emoji) => { setDraft((value) => (value + emoji).slice(0, 500)); setPickerOpen(false); }} />
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/6 text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50" aria-label="Send image"><ImagePlus className="h-4 w-4" /></button>
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void sendImage(file);
-                  }}
-                />
-              </div>
-
-              <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/6 text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50" aria-label="Record voice note"><Mic className="h-4 w-4" /></button>
+            <div className="relative">
+              <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Emoji picker"><Smile className="h-5 w-5" /></button>
+              {pickerOpen && (
+                <div className="absolute bottom-full left-0 z-50 mb-2">
+                  <EmojiPicker onPick={(emoji) => { setDraft((value) => (value + emoji).slice(0, 500)); setPickerOpen(false); }} />
+                </div>
+              )}
             </div>
 
-            <div className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/35 px-4 py-2.5">
+            <div>
+              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Send image"><ImagePlus className="h-5 w-5" /></button>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void sendImage(file);
+                }}
+              />
+            </div>
+
+            <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" aria-label="Record voice note"><Mic className="h-5 w-5" /></button>
+
+            <div className="flex-1 rounded-[26px] bg-slate-100/80 px-4 py-2 dark:bg-slate-800/80">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value.slice(0, 500))}
@@ -1345,121 +1365,17 @@ export default function ChatThreadPage() {
                     void send();
                   }
                 }}
-                placeholder={composerDisabled ? 'Messaging unavailable' : 'Type a message...'}
+                placeholder={composerDisabled ? 'Messaging unavailable' : 'Type a message…'}
                 rows={1}
                 disabled={composerDisabled}
-                className="max-h-24 min-h-[24px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-100 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed"
+                className="max-h-32 min-h-[28px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-100"
               />
-              <div className="mt-1 flex items-center justify-between gap-3 text-[10px] font-medium text-slate-500">
-                <span className="truncate">{composerDisabled ? 'Messaging paused' : 'Enter sends'}</span>
-                <span className="shrink-0">{draft.length}/500</span>
-              </div>
             </div>
 
-            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#b517ff_0%,#7b2cff_46%,#465dff_100%)] px-4 text-sm font-bold text-white shadow-[0_14px_30px_rgba(123,44,255,0.32)] transition-transform hover:scale-[1.01] disabled:pointer-events-none disabled:opacity-50"><Send className="h-4 w-4" /><span className="hidden sm:inline">{editTarget ? 'Save' : 'Send'}</span></button>
+            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-[1.02] disabled:pointer-events-none disabled:opacity-50 dark:bg-white dark:text-slate-900"><Send className="h-4 w-4" /><span>{editTarget ? 'Save' : ''}</span></button>
           </div>
         </div>
       </div>
-
-      {appearanceOpen && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/36 p-4 backdrop-blur-sm" onClick={() => setAppearanceOpen(false)}>
-          <div className="w-full max-w-xl rounded-[32px] border border-white/30 bg-white/92 p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950/96" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <div className="text-lg font-bold text-slate-900 dark:text-white">Choose chat theme</div>
-                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick the wallpaper that feels closest to an Instagram-style DM thread. Press Escape, click outside, or use Cancel anytime.</div>
-              </div>
-              <button type="button" onClick={() => setAppearanceOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="Close theme picker"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {WALLPAPERS.map((item) => {
-                const selected = (themeDraft || conversation?.wallpaper) === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setThemeDraft(item.id)}
-                    className={`rounded-[24px] border p-3 text-left transition-all ${selected ? 'border-slate-900 bg-slate-900 text-white shadow-lg dark:border-white dark:bg-white dark:text-slate-900' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'}`}
-                  >
-                    <span className={`mb-3 block h-20 rounded-[20px] bg-gradient-to-br ${item.shell}`} />
-                    <span className="block text-sm font-semibold">{item.label}</span>
-                    <span className={`mt-1 block text-xs ${selected ? 'text-white/75 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>{selected ? 'Selected theme' : 'Preview this look'}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs font-medium text-slate-400 dark:text-slate-500">Current theme: {conversation?.wallpaper || wallpaper.id}</div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setAppearanceOpen(false)} className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900">Cancel</button>
-                <button
-                  type="button"
-                  disabled={appearanceBusy || !themeDraft}
-                  onClick={async () => {
-                    if (!themeDraft) return;
-                    const ok = await setWallpaper(themeDraft);
-                    if (ok) setAppearanceOpen(false);
-                  }}
-                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-slate-900"
-                >
-                  {appearanceBusy ? 'Applying...' : 'Apply theme'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {reportOpen && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/38 p-4 backdrop-blur-sm" onClick={() => setReportOpen(false)}>
-          <div className="w-full max-w-lg rounded-[30px] border border-white/20 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <div className="text-lg font-bold text-slate-900 dark:text-white">Report conversation</div>
-                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Tell us what happened so moderation can review it faster.</div>
-              </div>
-              <button type="button" onClick={() => setReportOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="Close report dialog"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-3">
-              <select
-                value={reportReason}
-                onChange={(event) => setReportReason(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-800 dark:bg-slate-950"
-              >
-                {REPORT_REASONS.map((reason) => (
-                  <option key={reason} value={reason}>{reason}</option>
-                ))}
-              </select>
-              <textarea
-                value={reportDetails}
-                onChange={(event) => setReportDetails(event.target.value.slice(0, 500))}
-                rows={4}
-                placeholder="Share any context that helps moderation review this faster."
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm dark:border-slate-800 dark:bg-slate-950"
-              />
-            </div>
-
-            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-slate-400 dark:text-slate-500">{reportDetails.length}/500</div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setReportOpen(false)} className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900">Cancel</button>
-                <button
-                  type="button"
-                  onClick={submitReport}
-                  disabled={reportBusy}
-                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  <ShieldAlert className="h-4 w-4" />
-                  <span>{reportBusy ? 'Submitting...' : 'Submit report'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {mediaOpen && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
@@ -1472,7 +1388,7 @@ export default function ChatThreadPage() {
               <button type="button" onClick={() => setMediaOpen(false)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><X className="h-5 w-5" /></button>
             </div>
 
-            <div className="scrollbar-thin-soft max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto">
               {mediaBusy && <div className="text-sm text-slate-500">Loading shared media...</div>}
               {!mediaBusy && mediaItems.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700">
@@ -1524,7 +1440,7 @@ export default function ChatThreadPage() {
               {messageSnippet(forwardSource)}
             </div>
 
-            <div className="scrollbar-thin-soft max-h-72 space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-72 space-y-2 overflow-y-auto">
               {forwardTargets.map((item) => (
                 <button
                   key={item.id}
