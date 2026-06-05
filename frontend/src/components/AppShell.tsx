@@ -354,9 +354,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Mobile top bar is removed to maximize feed space */}
 
-        <main className={`flex-1 overflow-auto pb-24 pt-4 lg:ml-72 lg:py-6 lg:mr-80 flex flex-col ${isChatThreadPage ? 'bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.08),transparent_22%),linear-gradient(180deg,#fffaf7_0%,#fff7fb_58%,#fdf8ff_100%)] dark:bg-[linear-gradient(180deg,#05070b_0%,#0b1020_100%)]' : ''}`}>
+        <main className={`flex-1 overflow-auto pb-24 pt-4 lg:ml-72 lg:py-6 lg:mr-80 flex flex-col ${isChatThreadPage ? 'bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.12),transparent_24%),radial-gradient(circle_at_bottom,rgba(59,130,246,0.12),transparent_26%),linear-gradient(180deg,#07080d_0%,#0b0c12_100%)]' : ''}`}>
           {/* Desktop Global Search Bar */}
-          <div className={`sticky top-0 z-30 hidden md:block mb-6 mx-auto w-full px-4 pt-2 relative ${isChatThreadPage ? 'max-w-[430px]' : 'max-w-2xl'}`}>
+          <div className={`sticky top-0 z-30 mb-6 mx-auto w-full px-4 pt-2 relative ${isChatThreadPage ? 'hidden' : 'hidden md:block'} ${isChatThreadPage ? 'max-w-[390px]' : 'max-w-2xl'}`}>
             <form action="/search" method="get" className="relative group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-rose-500 transition-colors" />
               <input
@@ -389,7 +389,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </div>
-          <div className={`w-full mx-auto ${isChatThreadPage ? 'px-0 sm:px-0 md:max-w-[430px]' : 'px-2 sm:px-4 md:max-w-2xl'}`}>
+          <div className={`w-full mx-auto ${isChatThreadPage ? 'px-0 sm:px-0 md:max-w-[390px]' : 'px-2 sm:px-4 md:max-w-2xl'}`}>
             {children}
           </div>
         </main>
