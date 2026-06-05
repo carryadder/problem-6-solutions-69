@@ -839,15 +839,15 @@ export default function ChatThreadPage() {
   const other = conversation?.other || messages.find((message) => message.senderId !== meId)?.sender || null;
 
   return (
-    <div className="absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 overflow-hidden rounded-none bg-[linear-gradient(135deg,#ffd7bf_0%,#f7c4d3_46%,#eccbff_100%)] md:static md:h-[calc(100vh-8rem)] md:rounded-[34px] md:border md:border-white/60 md:shadow-[0_28px_90px_rgba(244,114,182,0.18)] dark:md:border-white/10 dark:md:shadow-[0_28px_90px_rgba(15,23,42,0.45)]">
-      <div className={`pointer-events-none absolute inset-0 ${wallpaper.overlay}`} />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.24)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.18)_100%)] dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.03)_100%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.38),transparent_62%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.09),transparent_62%)]" />
+    <div className="absolute inset-x-0 top-0 bottom-[calc(60px+env(safe-area-inset-bottom,0px))] z-10 overflow-hidden rounded-none bg-[linear-gradient(180deg,#fdf2f4_0%,#fde6ec_42%,#f6e9ff_100%)] md:static md:mx-auto md:h-[calc(100vh-9rem)] md:max-w-[430px] md:rounded-[38px] md:border md:border-white/70 md:shadow-[0_28px_90px_rgba(244,114,182,0.18)] dark:md:border-white/10 dark:md:shadow-[0_28px_90px_rgba(15,23,42,0.45)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(251,146,60,0.12),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.14),transparent_28%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(251,146,60,0.06),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.08),transparent_28%)]" />
+      <div className={`pointer-events-none absolute inset-0 opacity-60 ${wallpaper.overlay}`} />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.28)_0%,rgba(255,255,255,0.06)_48%,rgba(255,255,255,0.22)_100%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,transparent_48%,rgba(255,255,255,0.03)_100%)]" />
 
-      <div className="relative flex h-full flex-col gap-3 p-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] md:p-4">
-        <header className="relative z-30 rounded-[30px] border border-white/75 bg-white/62 p-4 shadow-[0_18px_48px_rgba(255,255,255,0.35)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/58 dark:shadow-black/20">
+      <div className="relative flex h-full flex-col gap-3 p-2.5 pt-[calc(env(safe-area-inset-top,0px)+10px)] md:p-3">
+        <header className="relative z-30 rounded-[28px] border border-white/75 bg-white/58 p-3 shadow-[0_14px_40px_rgba(255,255,255,0.28)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/58 dark:shadow-black/20">
           <div className="flex items-start gap-3">
-            <Link href="/chat" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-slate-500 shadow-sm transition-colors hover:text-slate-900 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white">
+            <Link href="/chat" className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/86 text-slate-500 shadow-sm transition-colors hover:text-slate-900 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:text-white">
               <ArrowLeft className="h-4 w-4" />
             </Link>
 
@@ -855,12 +855,12 @@ export default function ChatThreadPage() {
               {other ? (
                 <Link href={`/u/${other.handle}`} className="flex min-w-0 items-center gap-3">
                   <div className="relative shrink-0">
-                    <img src={avatarFor(other)} alt="" className="h-11 w-11 rounded-2xl object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
+                    <img src={avatarFor(other)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
                     <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-950" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-slate-900 dark:text-white">{other.displayName}</div>
-                    <div className={`truncate text-xs ${typingName ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    <div className="min-w-0">
+                    <div className="truncate text-[15px] font-bold text-slate-900 dark:text-white">{other.displayName}</div>
+                    <div className={`truncate text-[12px] ${typingName ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
                       {statusLabel(conversation, typingName)}
                     </div>
                   </div>
@@ -874,7 +874,7 @@ export default function ChatThreadPage() {
               <button
                 type="button"
                 onClick={() => setSettingsMenuOpen((value) => !value)}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white/88 text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white/88 text-slate-600 transition-colors hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:text-white"
                 aria-label="Chat options"
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -976,25 +976,6 @@ export default function ChatThreadPage() {
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/75 bg-white/78 px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300">
-              <MessageSquare className="h-3.5 w-3.5" />
-              {formatMessageCount(messages.length)}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/75 bg-white/78 px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300">
-              <ImageIcon className="h-3.5 w-3.5" />
-              {formatMediaCount(mediaCount)}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/75 bg-white/78 px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300">
-              <Palette className="h-3.5 w-3.5" />
-              {wallpaper.label}
-            </span>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-sm ${conversation?.pushMuted ? 'border-amber-200/80 bg-amber-50/80 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300' : 'border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300'}`}>
-              {conversation?.pushMuted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
-              {conversation?.pushMuted ? 'Muted' : 'Live alerts'}
-            </span>
-          </div>
-
           {searchOpen && (
             <div className="mt-3 rounded-3xl border border-white/60 bg-white/75 p-3 shadow-inner dark:border-white/10 dark:bg-slate-950/60">
               <div className="flex items-center gap-2 rounded-2xl bg-slate-100/80 px-3 py-2 dark:bg-slate-900/80">
@@ -1061,9 +1042,8 @@ export default function ChatThreadPage() {
           </div>
         )}
 
-        <div ref={scrollRef} className={`scrollbar-thin-soft relative flex-1 overflow-y-auto rounded-[34px] border border-white/55 bg-gradient-to-br ${wallpaper.shell} p-4 shadow-inner dark:border-white/10`}>
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.2),rgba(255,255,255,0.08))] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))]" />
-          <div className="relative flex min-h-full flex-col gap-3">
+        <div ref={scrollRef} className="scrollbar-thin-soft relative flex-1 overflow-y-auto rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.32),rgba(255,255,255,0.14))] px-3 py-4 shadow-inner backdrop-blur-sm dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.56),rgba(15,23,42,0.38))]">
+          <div className="relative mx-auto flex min-h-full w-full max-w-[360px] flex-col gap-3">
             {loading && (
               <div className="flex h-full items-center justify-center">
                 <div className="rounded-[28px] border border-white/60 bg-white/75 px-5 py-4 text-sm font-medium text-slate-500 shadow-sm dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300">
@@ -1105,14 +1085,14 @@ export default function ChatThreadPage() {
                 <div key={message.id} data-message-id={message.id} className="space-y-2 rounded-3xl transition-shadow">
                   {showDay && (
                     <div className="flex justify-center">
-                      <div className="rounded-full bg-white/82 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm dark:bg-slate-900/65 dark:text-slate-400">
+                      <div className="rounded-full bg-white/88 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500 shadow-sm dark:bg-slate-900/65 dark:text-slate-400">
                         {formatDay(message.createdAt)}
                       </div>
                     </div>
                   )}
 
                   <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`flex max-w-[92%] items-end gap-2 sm:max-w-[74%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`flex max-w-[88%] items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                       {!isMe && (
                         <div className="w-9 shrink-0">
                           {startsGroup ? (
@@ -1148,10 +1128,10 @@ export default function ChatThreadPage() {
                             onClick={() => {
                               if (selectionMode) toggleSelected(message.id);
                             }}
-                            className={`group relative overflow-hidden rounded-[28px] px-5 py-4 text-left text-[15px] leading-relaxed shadow-[0_16px_40px_rgba(15,23,42,0.09)] ${
+                            className={`group relative overflow-hidden rounded-[24px] px-4 py-3 text-left text-[15px] leading-relaxed shadow-[0_10px_30px_rgba(15,23,42,0.08)] ${
                               isMe
-                                ? 'bg-[linear-gradient(180deg,#27334a_0%,#1f293d_100%)] text-white dark:bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] dark:text-slate-900'
-                                : 'border border-white/70 bg-white/58 text-slate-900 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100'
+                                ? 'bg-[linear-gradient(180deg,#1f2d44_0%,#1b2536_100%)] text-white dark:bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] dark:text-slate-900'
+                                : 'border border-white/75 bg-white/72 text-slate-900 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/74 dark:text-slate-100'
                             } ${isMe ? (endsGroup ? 'rounded-br-md' : 'rounded-br-2xl') : endsGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'} ${selectionMode && selectedIds.includes(message.id) ? 'ring-2 ring-rose-400' : ''}`}
                           >
                           <span className={`pointer-events-none absolute inset-x-0 top-0 h-px ${isMe ? 'bg-white/30 dark:bg-slate-400/30' : 'bg-white/90 dark:bg-white/10'}`} />
@@ -1286,7 +1266,7 @@ export default function ChatThreadPage() {
           </div>
         )}
 
-        <div className="rounded-[28px] border border-white/60 bg-white/78 p-2 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/72">
+        <div className="rounded-[28px] border border-white/65 bg-white/72 p-2.5 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/72">
           {editTarget && (
             <div className="mb-2 flex items-start justify-between rounded-2xl bg-amber-50/90 px-4 py-3 text-sm dark:bg-amber-950/25">
               <div>
@@ -1324,10 +1304,10 @@ export default function ChatThreadPage() {
             </div>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] sm:items-end">
-            <div className="order-2 flex items-center gap-2 sm:order-1 sm:col-span-3">
+          <div className="flex items-end gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <div className="relative">
-                <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] border border-white/75 bg-white/82 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-700 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-900" aria-label="Emoji picker"><Smile className="h-5 w-5" /></button>
+                <button type="button" onClick={() => setPickerOpen((value) => !value)} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/75 bg-white/86 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-700 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-900" aria-label="Emoji picker"><Smile className="h-4 w-4" /></button>
                 {pickerOpen && (
                   <div className="absolute bottom-full left-0 z-50 mb-2">
                     <EmojiPicker onPick={(emoji) => { setDraft((value) => (value + emoji).slice(0, 500)); setPickerOpen(false); }} />
@@ -1336,7 +1316,7 @@ export default function ChatThreadPage() {
               </div>
 
               <div>
-                <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] border border-white/75 bg-white/82 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-700 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-900" aria-label="Send image"><ImagePlus className="h-5 w-5" /></button>
+                <button type="button" onClick={() => imageInputRef.current?.click()} disabled={voiceBusy || composerDisabled} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/75 bg-white/86 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-700 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-900" aria-label="Send image"><ImagePlus className="h-4 w-4" /></button>
                 <input
                   ref={imageInputRef}
                   type="file"
@@ -1345,14 +1325,14 @@ export default function ChatThreadPage() {
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) void sendImage(file);
-                  }}
-                />
-              </div>
-
-              <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] border border-white/75 bg-white/82 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-700 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-900" aria-label="Record voice note"><Mic className="h-5 w-5" /></button>
+                }}
+              />
             </div>
 
-            <div className="order-1 min-w-0 rounded-[30px] border border-white/80 bg-white/72 px-5 py-4 shadow-inner backdrop-blur-md sm:order-2 sm:col-span-1 dark:border-white/10 dark:bg-slate-900/62">
+              <button type="button" onClick={() => void startRecording()} disabled={voiceBusy || composerDisabled || isRecording} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/75 bg-white/86 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-700 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-900" aria-label="Record voice note"><Mic className="h-4 w-4" /></button>
+            </div>
+
+            <div className="min-w-0 flex-1 rounded-full border border-white/80 bg-white/82 px-4 py-2.5 shadow-inner backdrop-blur-md dark:border-white/10 dark:bg-slate-900/62">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value.slice(0, 500))}
@@ -1363,17 +1343,17 @@ export default function ChatThreadPage() {
                   }
                 }}
                 placeholder={composerDisabled ? 'Messaging unavailable' : 'Type a message...'}
-                rows={3}
+                rows={1}
                 disabled={composerDisabled}
-                className="max-h-36 min-h-[88px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-100"
+                className="max-h-24 min-h-[24px] w-full resize-none bg-transparent text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-100"
               />
-              <div className="mt-3 flex items-end justify-between gap-3 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                <span className="max-w-[18rem]">{composerDisabled ? 'Messaging is paused for this chat.' : 'Enter sends. Shift+Enter adds a new line.'}</span>
+              <div className="mt-1 flex items-center justify-between gap-3 text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                <span className="truncate">{composerDisabled ? 'Messaging paused' : 'Enter sends'}</span>
                 <span className="shrink-0">{draft.length}/500</span>
               </div>
             </div>
 
-            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="order-3 inline-flex h-14 w-full items-center justify-center gap-2 rounded-[20px] bg-[linear-gradient(180deg,#7e6d84_0%,#6f6278_100%)] px-6 text-sm font-bold text-white shadow-[0_14px_30px_rgba(111,98,120,0.32)] transition-transform hover:scale-[1.01] disabled:pointer-events-none disabled:opacity-50 sm:w-auto dark:bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] dark:text-slate-900"><Send className="h-4 w-4" /><span>{editTarget ? 'Save message' : 'Send message'}</span></button>
+            <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending || composerDisabled} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#4b5567_0%,#364152_100%)] px-4 text-sm font-bold text-white shadow-[0_10px_24px_rgba(71,85,105,0.28)] transition-transform hover:scale-[1.01] disabled:pointer-events-none disabled:opacity-50 dark:bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] dark:text-slate-900"><Send className="h-4 w-4" /><span className="hidden sm:inline">{editTarget ? 'Save' : 'Send'}</span></button>
           </div>
         </div>
       </div>
