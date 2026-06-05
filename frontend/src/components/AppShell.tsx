@@ -100,6 +100,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { mutate } = useSWRConfig();
   const pathname = usePathname() || "/";
   const isAuthPage = pathname === "/login" || pathname === "/";
+  const isChatThreadPage = /^\/chat\/[^/]+/.test(pathname);
   const [authPending, setAuthPending] = useState(false);
 
   async function startGoogleSignIn() {
@@ -353,14 +354,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Mobile top bar is removed to maximize feed space */}
 
-        <main className="flex-1 overflow-auto pb-24 pt-4 lg:ml-72 lg:py-6 lg:mr-80 flex flex-col">
+        <main className={`flex-1 overflow-auto pb-24 pt-4 lg:ml-72 lg:py-6 lg:mr-80 flex flex-col ${isChatThreadPage ? 'bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.08),transparent_22%),linear-gradient(180deg,#fffaf7_0%,#fff7fb_58%,#fdf8ff_100%)] dark:bg-[linear-gradient(180deg,#05070b_0%,#0b1020_100%)]' : ''}`}>
           {/* Desktop Global Search Bar */}
-          <div className="sticky top-0 z-30 hidden md:block mb-6 mx-auto w-full max-w-2xl px-4 pt-2 relative">
+          <div className={`sticky top-0 z-30 hidden md:block mb-6 mx-auto w-full px-4 pt-2 relative ${isChatThreadPage ? 'max-w-[430px]' : 'max-w-2xl'}`}>
             <form action="/search" method="get" className="relative group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-rose-500 transition-colors" />
               <input
                 name="q"
-                placeholder="Search posts or people..."
+                placeholder={isChatThreadPage ? "Search" : "Search posts or people..."}
                 className="w-full bg-white/70 dark:bg-black/40 backdrop-blur-xl border border-slate-200/60 dark:border-slate-800/60 rounded-full py-3.5 pl-12 pr-4 text-sm font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all placeholder:text-slate-500"
               />
             </form>
@@ -388,7 +389,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </div>
-          <div className="w-full px-2 sm:px-4 mx-auto md:max-w-2xl">
+          <div className={`w-full mx-auto ${isChatThreadPage ? 'px-0 sm:px-0 md:max-w-[430px]' : 'px-2 sm:px-4 md:max-w-2xl'}`}>
             {children}
           </div>
         </main>
