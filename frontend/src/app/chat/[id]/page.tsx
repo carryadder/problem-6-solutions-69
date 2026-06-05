@@ -182,6 +182,7 @@ export default function ChatThreadPage() {
   const [muteBusy, setMuteBusy] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [appearanceBusy, setAppearanceBusy] = useState(false);
+  const [themeDraft, setThemeDraft] = useState<WallpaperId | null>(null);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [typingName, setTypingName] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
@@ -235,6 +236,28 @@ export default function ChatThreadPage() {
   useEffect(() => {
     if (status === 'unauthenticated') router.replace('/login');
   }, [status, router]);
+
+  useEffect(() => {
+    if (!appearanceOpen) return;
+    setThemeDraft(conversation?.wallpaper || wallpaper.id);
+  }, [appearanceOpen, conversation?.wallpaper, wallpaper.id]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setPickerOpen(false);
+      setSettingsMenuOpen(false);
+      setSearchOpen(false);
+      setAppearanceOpen(false);
+      setReportOpen(false);
+      setMediaOpen(false);
+      setForwardSource(null);
+      setActiveMessageId(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
@@ -598,7 +621,8 @@ export default function ChatThreadPage() {
   }
 
   async function setWallpaper(nextWallpaper: WallpaperId) {
-    if (!conversation || appearanceBusy || conversation.wallpaper === nextWallpaper) return;
+    if (!conversation || appearanceBusy) return false;
+    if (conversation.wallpaper === nextWallpaper) return true;
     setAppearanceBusy(true);
     setConversation({ ...conversation, wallpaper: nextWallpaper });
 
@@ -609,8 +633,11 @@ export default function ChatThreadPage() {
         'PATCH',
       );
       setConversation((prev) => (prev ? { ...prev, wallpaper: res.preferences.wallpaper, pushMuted: res.preferences.pushMuted } : prev));
+      return true;
     } catch {
       setConversation(conversation);
+      setError('Could not update chat theme.');
+      return false;
     } finally {
       setAppearanceBusy(false);
     }
@@ -906,7 +933,9 @@ export default function ChatThreadPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setAppearanceOpen((value) => !value);
+                      setThemeDraft(conversation?.wallpaper || wallpaper.id);
+                      setAppearanceOpen(true);
+                      setReportOpen(false);
                       setSettingsMenuOpen(false);
                     }}
                     className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
@@ -931,7 +960,8 @@ export default function ChatThreadPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setReportOpen((value) => !value);
+                          setReportOpen(true);
+                          setAppearanceOpen(false);
                           setSettingsMenuOpen(false);
                         }}
                         className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/30"
@@ -1014,80 +1044,6 @@ export default function ChatThreadPage() {
             </button>
           )}
 
-          {appearanceOpen && (
-            <div className="mt-3 space-y-3 rounded-3xl border border-white/60 bg-white/75 p-3 dark:border-white/10 dark:bg-slate-950/60">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {WALLPAPERS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setWallpaper(item.id)}
-                    disabled={appearanceBusy}
-                    className={`rounded-[22px] border px-3 py-3 text-left text-xs font-semibold transition-colors ${conversation?.wallpaper === item.id ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900' : 'border-white/70 bg-white/80 text-slate-600 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-300'}`}
-                  >
-                    <span className={`mb-2 block h-10 rounded-2xl bg-gradient-to-br ${item.shell}`} />
-                    <span className="block">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {other && (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={toggleBlock}
-                    disabled={blockBusy}
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold ${conversation?.blockedByMe ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'}`}
-                  >
-                    <ShieldBan className="h-3.5 w-3.5" />
-                    <span>{conversation?.blockedByMe ? 'Unblock contact' : 'Block contact'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReportOpen((value) => !value)}
-                    className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
-                  >
-                    <Flag className="h-3.5 w-3.5" />
-                    <span>Report</span>
-                  </button>
-                </div>
-              )}
-
-              {reportOpen && (
-                <div className="space-y-3 rounded-3xl border border-amber-200/70 bg-amber-50/80 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">Report conversation</div>
-                  <select
-                    value={reportReason}
-                    onChange={(event) => setReportReason(event.target.value)}
-                    className="w-full rounded-2xl border border-amber-200/80 bg-white px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-slate-950"
-                  >
-                    {REPORT_REASONS.map((reason) => (
-                      <option key={reason} value={reason}>{reason}</option>
-                    ))}
-                  </select>
-                  <textarea
-                    value={reportDetails}
-                    onChange={(event) => setReportDetails(event.target.value.slice(0, 500))}
-                    rows={3}
-                    placeholder="Share any context that helps moderation review this faster."
-                    className="w-full rounded-2xl border border-amber-200/80 bg-white px-3 py-2 text-sm dark:border-amber-900/40 dark:bg-slate-950"
-                  />
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs text-amber-700/80 dark:text-amber-300/70">{reportDetails.length}/500</div>
-                    <button
-                      type="button"
-                      onClick={submitReport}
-                      disabled={reportBusy}
-                      className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white"
-                    >
-                      <ShieldAlert className="h-3.5 w-3.5" />
-                      <span>{reportBusy ? 'Submitting...' : 'Submit report'}</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </header>
 
         {reportMessage && (
@@ -1161,7 +1117,7 @@ export default function ChatThreadPage() {
                         <div className="w-9 shrink-0">
                           {startsGroup ? (
                             <Link href={`/u/${message.sender.handle}`}>
-                              <img src={avatarFor(message.sender)} alt="" className="h-9 w-9 rounded-2xl object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
+                              <img src={avatarFor(message.sender)} alt="" className="h-9 w-9 rounded-full object-cover ring-2 ring-white/70 dark:ring-slate-900/70" />
                             </Link>
                           ) : (
                             <div className="w-9" />
@@ -1421,6 +1377,106 @@ export default function ChatThreadPage() {
           </div>
         </div>
       </div>
+
+      {appearanceOpen && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/36 p-4 backdrop-blur-sm" onClick={() => setAppearanceOpen(false)}>
+          <div className="w-full max-w-xl rounded-[32px] border border-white/30 bg-white/92 p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950/96" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-bold text-slate-900 dark:text-white">Choose chat theme</div>
+                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick the wallpaper that feels closest to an Instagram-style DM thread. Press Escape, click outside, or use Cancel anytime.</div>
+              </div>
+              <button type="button" onClick={() => setAppearanceOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="Close theme picker"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {WALLPAPERS.map((item) => {
+                const selected = (themeDraft || conversation?.wallpaper) === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setThemeDraft(item.id)}
+                    className={`rounded-[24px] border p-3 text-left transition-all ${selected ? 'border-slate-900 bg-slate-900 text-white shadow-lg dark:border-white dark:bg-white dark:text-slate-900' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'}`}
+                  >
+                    <span className={`mb-3 block h-20 rounded-[20px] bg-gradient-to-br ${item.shell}`} />
+                    <span className="block text-sm font-semibold">{item.label}</span>
+                    <span className={`mt-1 block text-xs ${selected ? 'text-white/75 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>{selected ? 'Selected theme' : 'Preview this look'}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs font-medium text-slate-400 dark:text-slate-500">Current theme: {conversation?.wallpaper || wallpaper.id}</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setAppearanceOpen(false)} className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900">Cancel</button>
+                <button
+                  type="button"
+                  disabled={appearanceBusy || !themeDraft}
+                  onClick={async () => {
+                    if (!themeDraft) return;
+                    const ok = await setWallpaper(themeDraft);
+                    if (ok) setAppearanceOpen(false);
+                  }}
+                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-slate-900"
+                >
+                  {appearanceBusy ? 'Applying...' : 'Apply theme'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reportOpen && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/38 p-4 backdrop-blur-sm" onClick={() => setReportOpen(false)}>
+          <div className="w-full max-w-lg rounded-[30px] border border-white/20 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-bold text-slate-900 dark:text-white">Report conversation</div>
+                <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Tell us what happened so moderation can review it faster.</div>
+              </div>
+              <button type="button" onClick={() => setReportOpen(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="Close report dialog"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="space-y-3">
+              <select
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-800 dark:bg-slate-950"
+              >
+                {REPORT_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>{reason}</option>
+                ))}
+              </select>
+              <textarea
+                value={reportDetails}
+                onChange={(event) => setReportDetails(event.target.value.slice(0, 500))}
+                rows={4}
+                placeholder="Share any context that helps moderation review this faster."
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+              />
+            </div>
+
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs text-slate-400 dark:text-slate-500">{reportDetails.length}/500</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setReportOpen(false)} className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900">Cancel</button>
+                <button
+                  type="button"
+                  onClick={submitReport}
+                  disabled={reportBusy}
+                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>{reportBusy ? 'Submitting...' : 'Submit report'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mediaOpen && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
